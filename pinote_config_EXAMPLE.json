@@ -1,0 +1,11 @@
+{
+  "hue_bridge_ip": "192.168.0.10",
+  "hue_api_key": "YOUR_HUE_API_KEY_HERE",
+  "hue_sensor_ids": ["4", "42"],
+  "anilist_media_ids": [182255, 185753, 184951, 192261],
+  "truncate_titles": false,
+  "anime_per_line": 1,
+  "note_scale": 0.6,
+  "latitude": 12.12345,
+  "longitude": 12.12345
+}
