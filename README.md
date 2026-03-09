@@ -175,6 +175,10 @@ Android App ──HTTP POST──► PiNote Server ──mmap──► /dev/fb0 
                 memory)      Hue, Anime)     file)
 ```
 
+## Client App
+
+[**pinote-apk**](https://github.com/Awesmoe/pinote-apk) — Android app for sending handwritten notes to this server.
+
 ## License
 
 MIT
