@@ -12,15 +12,17 @@ A lightweight C server that turns a Raspberry Pi with an LCD into a handwritten 
 
 - **Direct framebuffer rendering** — writes pixels to `/dev/fb0`, no display server overhead
 - **Double-buffered** — flicker-free screen updates via back buffer + single memcpy flip
-- **Status bar** — shows IP address, WiFi signal, outside temperature, and current time
+- **Module layout system** — configurable dashboard modules (anime, chart, RSS, notes) placed via JSON config as full or half width
+- **Temperature chart** — line chart of historical sensor data with auto-scaled axes, color-coded sensor lines, and legend
+- **RSS feed** — displays headlines from any RSS feed (direct XML or rss2json fallback for Cloudflare-protected sites)
+- **Status bar** — IP address, WiFi signal, sensor temperatures (color-matched to chart), last updated timestamp, and clock
 - **Outside weather** — current temperature via [Open-Meteo](https://open-meteo.com/) (free, no API key)
-- **Philips Hue integration** — displays temperature from one or more Hue sensors
-- **AniList integration** — shows countdown to next episode of tracked anime
-- **Auto-scaling notes** — notes shrink automatically when the screen fills up, no notes are ever deleted
+- **Philips Hue integration** — displays temperature from one or more Hue sensors, colors match chart legend
+- **AniList integration** — countdown to next episode of tracked anime, paired left/right layout
+- **Auto-scaling notes** — notes shrink automatically when the screen fills up
 - **Persistent notes** — notes survive reboots, saved to disk on every change
 - **Orientation support** — landscape, portrait, and flipped variants
 - **Embedded bitmap font** — 8x16 CP437-style font, no external font files needed
-- **Configurable** — all settings in a single JSON config file
 
 ## Requirements
 
@@ -31,7 +33,26 @@ A lightweight C server that turns a Raspberry Pi with an LCD into a handwritten 
 ## Building
 
 ```bash
-gcc -O2 -o notes_server notes_server.c -lpthread
+make
+```
+
+Or manually:
+
+```bash
+gcc -Wall -Wextra -O2 -o notes_server notes_server.c fb_draw.c config.c api_fetch.c chart.c rss.c -lpthread -lm
+```
+
+## Project Structure
+
+```
+pinote.h         Shared types, defines, extern globals, function declarations
+fb_draw.c        Framebuffer init, pixels, lines, font data, text rendering
+config.c         JSON config file parsing
+api_fetch.c      API fetchers (Hue, Open-Meteo, temp history, AniList, RSS)
+chart.c          Temperature chart rendering
+rss.c            RSS feed module rendering
+notes_server.c   Main, HTTP server, notes, status bar, layout manager
+Makefile         Build script
 ```
 
 ## Running
@@ -75,9 +96,23 @@ Create a `pinote_config.json` in the same directory as the server:
   "hue_api_key": "your-hue-api-key",
   "hue_sensor_ids": ["1", "2"],
   "anilist_media_ids": [182255, 185753],
-  "truncate_titles": false,
-  "anime_per_line": 1,
-  "note_scale": 0.45
+  "anime_truncate": 20,
+  "anime_per_line": 2,
+  "note_scale": 0.6,
+  "temp_api_url": "https://example.com/api/temperatures",
+  "temp_api_key": "your-api-key",
+  "chart_height": 200,
+  "refresh_interval": 1800,
+  "rss_url": "https://example.com/rss",
+  "max_rss_items": 6,
+  "rss_truncate": 30,
+  "rss_per_line": 1,
+  "modules": [
+    {"type": "anime", "width": "full"},
+    {"type": "rss", "width": "full"},
+    {"type": "chart", "width": "half"},
+    {"type": "notes", "width": "half"}
+  ]
 }
 ```
 
@@ -87,13 +122,126 @@ Create a `pinote_config.json` in the same directory as the server:
 | `longitude` | float | — | Longitude for outside temperature (Open-Meteo) |
 | `hue_bridge_ip` | string | — | IP address of your Philips Hue Bridge |
 | `hue_api_key` | string | — | Hue Bridge API key ([how to get one](https://developers.meethue.com/develop/get-started-2/)) |
-| `hue_sensor_ids` | string[] | — | Sensor IDs to read temperature from (pipe-separated on display) |
+| `hue_sensor_ids` | string[] | — | Sensor IDs to read temperature from |
 | `anilist_media_ids` | int[] | — | [AniList](https://anilist.co) media IDs to track |
-| `truncate_titles` | bool | `false` | Truncate long anime titles |
-| `anime_per_line` | int | `0` | Anime entries per status bar row (0 = all on one line) |
-| `note_scale` | float | `0.45` | Note rendering scale (0.1–1.0). Notes auto-shrink below this when the screen fills up |
+| `anime_truncate` | int | `0` | Max characters for anime titles (0 = no truncation) |
+| `anime_per_line` | int | `2` | Anime entries per row (1 or 2) |
+| `note_scale` | float | `0.6` | Note rendering scale (0.1-1.0). Notes auto-shrink below this when the screen fills up |
+| `temp_api_url` | string | — | URL to fetch temperature history from (see format below) |
+| `temp_api_key` | string | — | API key sent as `X-API-Key` header |
+| `chart_height` | int | `200` | Temperature chart height in pixels. Set to `0` to disable |
+| `refresh_interval` | int | `300` | How often to refresh API data in seconds (minimum 30) |
+| `rss_url` | string | — | RSS feed URL |
+| `max_rss_items` | int | `6` | Max RSS items to display (max 10) |
+| `rss_truncate` | int | `0` | Max characters for RSS titles (0 = no truncation) |
+| `rss_per_line` | int | `1` | RSS items per row (1 or 2) |
+| `modules` | array | see below | Module layout configuration |
 
-All fields are optional. The server runs fine without a config file — you just won't get Hue/AniList info in the status bar.
+All fields are optional. The server runs fine without a config file — you just won't get any dashboard data.
+
+### Modules
+
+The `modules` array controls which dashboard modules are shown and how they're laid out. Each entry has a `type` and `width`:
+
+| Type | Description |
+|------|-------------|
+| `"anime"` | AniList anime countdowns |
+| `"chart"` | Temperature line chart |
+| `"rss"` | RSS feed headlines |
+| `"notes"` | Handwritten notes area |
+
+| Width | Description |
+|-------|-------------|
+| `"full"` | Takes the full screen width (own row) |
+| `"half"` | Paired side-by-side with the next half-width module |
+
+Half-width modules are paired automatically: the first `"half"` in the array pairs with the second `"half"`, regardless of any full-width modules between them. Full-width modules between a pair render in their own rows before the paired row. If a half-width module has no partner, it renders on the left side only.
+
+When a fixed-height module (e.g. chart) is paired with a flexible one (e.g. notes), the row uses the fixed module's height.
+
+Default layout if `modules` is not specified:
+```json
+[
+  {"type": "anime", "width": "full"},
+  {"type": "chart", "width": "full"},
+  {"type": "notes", "width": "full"}
+]
+```
+
+The status bar is always at the top and is not part of the module system.
+
+### Temperature API format
+
+The `temp_api_url` endpoint should return a flat JSON array of readings:
+
+```json
+[
+  {"time": "2024-01-15 12:00:00", "sensor_name": "Office", "temperature_c": "22.5"},
+  {"time": "2024-01-15 12:00:00", "sensor_name": "Outdoor", "temperature_c": "8.3"}
+]
+```
+
+Readings are grouped by `sensor_name` and plotted as separate color-coded lines. Data should be ordered newest-first (the server sorts it). Sensors are sorted alphabetically and assigned colors: cyan, yellow, red, teal, purple.
+
+## Display Layout
+
+Default (all full-width):
+
+```
++--------------------------------------+
+| Status bar (IP, WiFi, temps, clock)  |
++--------------------------------------+
+| Anime countdowns                     |
++--------------------------------------+
+| Temperature chart                    |
++--------------------------------------+
+| Notes area                           |
++--------------------------------------+
+```
+
+With half-width modules (adjacent):
+
+```json
+"modules": [
+  {"type": "anime", "width": "full"},
+  {"type": "rss", "width": "full"},
+  {"type": "chart", "width": "half"},
+  {"type": "notes", "width": "half"}
+]
+```
+```
++--------------------------------------+
+| Status bar                           |
++--------------------------------------+
+| Anime countdowns                     |
++--------------------------------------+
+| RSS headlines                        |
++------------------+-------------------+
+| Chart            | Notes             |
++------------------+-------------------+
+```
+
+With half-width modules (non-adjacent, full-width modules render first):
+
+```json
+"modules": [
+  {"type": "chart", "width": "half"},
+  {"type": "anime", "width": "full"},
+  {"type": "rss", "width": "full"},
+  {"type": "notes", "width": "half"}
+]
+```
+```
++--------------------------------------+
+| Status bar                           |
++------------------+-------------------+
+| Chart            | Notes             |
++------------------+-------------------+
+| Anime countdowns                     |
++--------------------------------------+
+| RSS headlines                        |
++--------------------------------------+
+```
 
 ## API
 
@@ -138,7 +286,7 @@ Clear all notes from the screen and disk.
 
 ## Display orientation
 
-The display orientation is set via `FORCE_ORIENTATION` in the source code:
+The display orientation is set via `FORCE_ORIENTATION` in `pinote.h`:
 
 | Value | Orientation |
 |-------|-------------|
@@ -147,6 +295,16 @@ The display orientation is set via `FORCE_ORIENTATION` in the source code:
 | `2` | Portrait (90°) |
 | `3` | Landscape flipped (180°) |
 | `4` | Portrait flipped (270°) |
+
+## Hiding the console cursor
+
+If a blinking cursor appears on the LCD, add this to `/boot/firmware/cmdline.txt`:
+
+```
+vt.global_cursor_default=0
+```
+
+You may also want to add `quiet` and remove `console=serial0,115200` from the same line to suppress boot messages.
 
 ## LCD resolution fix
 
@@ -161,23 +319,24 @@ Replace `1920x1200` with your LCD's native resolution.
 ## Architecture
 
 ```
-Android App ──HTTP POST──► PiNote Server ──mmap──► /dev/fb0 ──► LCD
-                                │
-                          ┌─────┴─────┐
-                          │ Back      │
-                          │ Buffer    │──memcpy flip──► Framebuffer
-                          └───────────┘
-                                │
-                    ┌───────────┼───────────┐
-                    ▼           ▼           ▼
-               Note Store   Status Bar      Config
-               (disk +      (IP, weather,   (JSON
-                memory)      Hue, Anime)     file)
+Android App --HTTP POST--> PiNote Server --mmap--> /dev/fb0 --> LCD
+                                |
+                          +-----+-----+
+                          | Back      |
+                          | Buffer    |--memcpy flip--> Framebuffer
+                          +-----------+
+                                |
+                    +-----------+-----------+
+                    v           v           v
+               Note Store   Status Bar    APIs
+               (disk +      (IP, WiFi,   (Hue, Weather, AniList,
+                memory)      clock)       Temp History, RSS)
+                                            |
+                              +------+------+------+
+                              v      v      v      v
+                           Anime   Chart   RSS   Notes
+                          (module) (module) (module) (module)
 ```
-
-## Client App
-
-[**pinote-apk**](https://github.com/Awesmoe/pinote-apk) — Android app for sending handwritten notes to this server.
 
 ## License
 
