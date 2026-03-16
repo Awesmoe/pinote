@@ -6,7 +6,11 @@ A lightweight C server that turns a Raspberry Pi with an LCD into a handwritten 
 ![Language](https://img.shields.io/badge/Language-C-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-![PiNote in action](photo.jpg)
+<p align="center">
+  <img src="photo.jpg" width="360" alt="Portrait mode — full-width modules">
+  &nbsp;&nbsp;
+  <img src="photo2.jpg" width="420" alt="Landscape mode — half-width chart + notes">
+</p>
 
 ## Features
 
