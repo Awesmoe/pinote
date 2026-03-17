@@ -112,9 +112,9 @@ void load_config(const char *path, AppConfig *cfg) {
         cfg->has_location = 1;
     }
 
-    // Parse temperature chart settings
-    json_get_string(buf, "temp_api_url", cfg->temp_api_url, sizeof(cfg->temp_api_url));
-    json_get_string(buf, "temp_api_key", cfg->temp_api_key, sizeof(cfg->temp_api_key));
+    // Parse chart data API settings
+    json_get_string(buf, "chart_api_url", cfg->chart_api_url, sizeof(cfg->chart_api_url));
+    json_get_string(buf, "chart_api_key", cfg->chart_api_key, sizeof(cfg->chart_api_key));
     cfg->chart_height = DEFAULT_CHART_HEIGHT;
     json_get_int(buf, "chart_height", &cfg->chart_height);
     if (cfg->chart_height < 0) cfg->chart_height = 0;
@@ -134,6 +134,9 @@ void load_config(const char *path, AppConfig *cfg) {
     if (cfg->rss_per_line < 1) cfg->rss_per_line = 1;
     if (cfg->rss_per_line > 2) cfg->rss_per_line = 2;
     json_get_int(buf, "rss_truncate", &cfg->rss_truncate);
+
+    // Parse sprite toggle (default: off)
+    json_get_int(buf, "sprite_enabled", &cfg->sprite_enabled);
 
     // Parse anilist_media_ids array
     const char *ids = strstr(buf, "\"anilist_media_ids\"");

@@ -160,6 +160,57 @@ void fb_flip(Framebuffer *fb) {
     memcpy(fb->fbp, fb->backbuf, fb->screensize);
 }
 
+// Set pixel directly on the front buffer (for sprite animation)
+void set_pixel_front(Framebuffer *fb, int logical_x, int logical_y, uint8_t r, uint8_t g, uint8_t b) {
+    int x, y;
+    transform_coords(fb, logical_x, logical_y, &x, &y);
+
+    if (x < 0 || x >= (int)fb->vinfo.xres || y < 0 || y >= (int)fb->vinfo.yres)
+        return;
+
+    long location = y * fb->finfo.line_length + x * (fb->vinfo.bits_per_pixel / 8);
+
+    if (fb->vinfo.bits_per_pixel == 32) {
+        *(fb->fbp + location + 0) = b;
+        *(fb->fbp + location + 1) = g;
+        *(fb->fbp + location + 2) = r;
+        *(fb->fbp + location + 3) = 0;
+    } else if (fb->vinfo.bits_per_pixel == 24) {
+        *(fb->fbp + location + 0) = b;
+        *(fb->fbp + location + 1) = g;
+        *(fb->fbp + location + 2) = r;
+    } else if (fb->vinfo.bits_per_pixel == 16) {
+        uint16_t rgb565 = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
+        *((uint16_t *)(fb->fbp + location)) = rgb565;
+    }
+}
+
+// Restore a single pixel from backbuf to front buffer
+void fb_restore_pixel(Framebuffer *fb, int logical_x, int logical_y) {
+    int x, y;
+    transform_coords(fb, logical_x, logical_y, &x, &y);
+    if (x < 0 || x >= (int)fb->vinfo.xres || y < 0 || y >= (int)fb->vinfo.yres)
+        return;
+    int bpp = fb->vinfo.bits_per_pixel / 8;
+    long loc = y * fb->finfo.line_length + x * bpp;
+    memcpy(fb->fbp + loc, fb->backbuf + loc, bpp);
+}
+
+// Restore a logical rect from backbuf to front buffer
+void fb_restore_rect(Framebuffer *fb, int rx, int ry, int rw, int rh) {
+    int bpp = fb->vinfo.bits_per_pixel / 8;
+    for (int ly = ry; ly < ry + rh; ly++) {
+        for (int lx = rx; lx < rx + rw; lx++) {
+            int x, y;
+            transform_coords(fb, lx, ly, &x, &y);
+            if (x < 0 || x >= (int)fb->vinfo.xres || y < 0 || y >= (int)fb->vinfo.yres)
+                continue;
+            long loc = y * fb->finfo.line_length + x * bpp;
+            memcpy(fb->fbp + loc, fb->backbuf + loc, bpp);
+        }
+    }
+}
+
 // Draw line (Bresenham with circular thickness)
 void draw_line(Framebuffer *fb, int x0, int y0, int x1, int y1, uint8_t r, uint8_t g, uint8_t b, int thickness) {
     int dx = abs(x1 - x0);

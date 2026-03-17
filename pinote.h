@@ -79,6 +79,10 @@
 // RSS feed
 #define MAX_RSS_ITEMS 10
 
+// Sprite animation
+#define SPRITE_FPS 10
+#define SPRITE_FRAME_MS (1000 / SPRITE_FPS)
+
 // ============================================================
 // Data structures
 // ============================================================
@@ -136,14 +140,15 @@ typedef struct {
     float latitude;        // location for weather (Open-Meteo)
     float longitude;
     int has_location;      // 1 if lat/lon configured
-    char temp_api_url[256];  // URL for temperature history API
-    char temp_api_key[128];  // API key (sent as X-API-Key header)
+    char chart_api_url[256];  // URL for chart data API
+    char chart_api_key[128];  // API key (sent as X-API-Key header)
     int chart_height;        // chart height in pixels (0 = disabled)
     int refresh_interval;    // API refresh interval in seconds (default CACHE_TTL)
     char rss_url[256];       // RSS feed URL
     int max_rss_items;       // max items to display (default 6)
     int rss_truncate;        // max characters for RSS titles (0 = no truncation)
     int rss_per_line;        // RSS items per row (1 or 2, default 1)
+    int sprite_enabled;      // 1 = show animated sprite, 0 = off (default 0)
     ModuleConfig modules[MAX_MODULES];
     int num_modules;
 } AppConfig;
@@ -231,9 +236,12 @@ static inline void truncate_with_dots(char *str, int max_chars) {
 int  fb_init(Framebuffer *fb, const char *device);
 void get_display_size(Framebuffer *fb, int *width, int *height);
 void set_pixel(Framebuffer *fb, int logical_x, int logical_y, uint8_t r, uint8_t g, uint8_t b);
+void set_pixel_front(Framebuffer *fb, int logical_x, int logical_y, uint8_t r, uint8_t g, uint8_t b);
 void fill_rect(Framebuffer *fb, int x, int y, int w, int h, uint8_t r, uint8_t g, uint8_t b);
 void clear_screen(Framebuffer *fb);
 void fb_flip(Framebuffer *fb);
+void fb_restore_pixel(Framebuffer *fb, int logical_x, int logical_y);
+void fb_restore_rect(Framebuffer *fb, int rx, int ry, int rw, int rh);
 void draw_line(Framebuffer *fb, int x0, int y0, int x1, int y1, uint8_t r, uint8_t g, uint8_t b, int thickness);
 void draw_char(Framebuffer *fb, int x, int y, char c, uint8_t r, uint8_t g, uint8_t b, int scale);
 int  draw_text(Framebuffer *fb, int x, int y, const char *text, uint8_t r, uint8_t g, uint8_t b, int scale);
@@ -265,6 +273,13 @@ void draw_chart(Framebuffer *fb, int chart_x, int chart_y, int chart_w, int char
 
 void draw_rss(Framebuffer *fb, int x, int y, int w, int h);
 int  get_rss_height(void);
+
+// ============================================================
+// sprite.c
+// ============================================================
+
+void *sprite_thread(void *arg);
+void sprite_redraw_after_flip(void);
 
 // ============================================================
 // notes_server.c

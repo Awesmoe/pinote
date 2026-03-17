@@ -6,23 +6,20 @@ A lightweight C server that turns a Raspberry Pi with an LCD into a handwritten 
 ![Language](https://img.shields.io/badge/Language-C-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-<p align="center">
-  <img src="photo.jpg" width="360" alt="Portrait mode — full-width modules">
-  &nbsp;&nbsp;
-  <img src="photo2.jpg" width="420" alt="Landscape mode — half-width chart + notes">
-</p>
+![PiNote in action](photo2.jpg)
 
 ## Features
 
 - **Direct framebuffer rendering** — writes pixels to `/dev/fb0`, no display server overhead
 - **Double-buffered** — flicker-free screen updates via back buffer + single memcpy flip
 - **Module layout system** — configurable dashboard modules (anime, chart, RSS, notes) placed via JSON config as full or half width
-- **Temperature chart** — line chart of historical sensor data with auto-scaled axes, color-coded sensor lines, and legend
+- **Data chart** — line chart with auto-scaled axes, color-coded lines, and legend. Feeds from any JSON API returning time-series data (e.g. temperature sensors)
 - **RSS feed** — displays headlines from any RSS feed (direct XML or rss2json fallback for Cloudflare-protected sites)
 - **Status bar** — IP address, WiFi signal, sensor temperatures (color-matched to chart), last updated timestamp, and clock
 - **Outside weather** — current temperature via [Open-Meteo](https://open-meteo.com/) (free, no API key)
+- **Animated sprite overlay** — animated pixel art character drawn to front buffer at configurable FPS, with fuzzy transparency keying
 - **Philips Hue integration** — displays temperature from one or more Hue sensors, colors match chart legend
-- **AniList integration** — countdown to next episode of tracked anime, paired left/right layout
+- **AniList integration** — countdown to next episode of tracked anime, with urgency-colored countdowns. Finished anime are automatically hidden
 - **Auto-scaling notes** — notes shrink automatically when the screen fills up
 - **Persistent notes** — notes survive reboots, saved to disk on every change
 - **Orientation support** — landscape, portrait, and flipped variants
@@ -43,7 +40,7 @@ make
 Or manually:
 
 ```bash
-gcc -Wall -Wextra -O2 -o notes_server notes_server.c fb_draw.c config.c api_fetch.c chart.c rss.c -lpthread -lm
+gcc -Wall -Wextra -O2 -o notes_server notes_server.c fb_draw.c config.c api_fetch.c chart.c rss.c sprite.c -lpthread -lm
 ```
 
 ## Project Structure
@@ -52,10 +49,13 @@ gcc -Wall -Wextra -O2 -o notes_server notes_server.c fb_draw.c config.c api_fetc
 pinote.h         Shared types, defines, extern globals, function declarations
 fb_draw.c        Framebuffer init, pixels, lines, font data, text rendering
 config.c         JSON config file parsing
-api_fetch.c      API fetchers (Hue, Open-Meteo, temp history, AniList, RSS)
-chart.c          Temperature chart rendering
+api_fetch.c      API fetchers (Hue, Open-Meteo, chart data, AniList, RSS)
+chart.c          Data chart rendering (auto-scaled axes, multi-line, legend)
 rss.c            RSS feed module rendering
+sprite.c         Animated sprite overlay (front buffer, fuzzy transparency)
 notes_server.c   Main, HTTP server, notes, status bar, layout manager
+sprite_data.h    Auto-generated sprite pixel data (from convert_sprite)
+convert_sprite.c Offline tool: BMP sprite sheet → C header array
 Makefile         Build script
 ```
 
@@ -103,8 +103,8 @@ Create a `pinote_config.json` in the same directory as the server:
   "anime_truncate": 20,
   "anime_per_line": 2,
   "note_scale": 0.6,
-  "temp_api_url": "https://example.com/api/temperatures",
-  "temp_api_key": "your-api-key",
+  "chart_api_url": "https://example.com/api/temperatures",
+  "chart_api_key": "your-api-key",
   "chart_height": 200,
   "refresh_interval": 1800,
   "rss_url": "https://example.com/rss",
@@ -131,9 +131,10 @@ Create a `pinote_config.json` in the same directory as the server:
 | `anime_truncate` | int | `0` | Max characters for anime titles (0 = no truncation) |
 | `anime_per_line` | int | `2` | Anime entries per row (1 or 2) |
 | `note_scale` | float | `0.6` | Note rendering scale (0.1-1.0). Notes auto-shrink below this when the screen fills up |
-| `temp_api_url` | string | — | URL to fetch temperature history from (see format below) |
-| `temp_api_key` | string | — | API key sent as `X-API-Key` header |
-| `chart_height` | int | `200` | Temperature chart height in pixels. Set to `0` to disable |
+| `chart_api_url` | string | — | URL to fetch chart data from (see format below) |
+| `chart_api_key` | string | — | API key sent as `X-API-Key` header |
+| `chart_height` | int | `200` | Chart height in pixels. Set to `0` to disable |
+| `sprite_enabled` | int | `0` | Set to `1` to show animated sprite overlay |
 | `refresh_interval` | int | `300` | How often to refresh API data in seconds (minimum 30) |
 | `rss_url` | string | — | RSS feed URL |
 | `max_rss_items` | int | `6` | Max RSS items to display (max 10) |
@@ -150,7 +151,7 @@ The `modules` array controls which dashboard modules are shown and how they're l
 | Type | Description |
 |------|-------------|
 | `"anime"` | AniList anime countdowns |
-| `"chart"` | Temperature line chart |
+| `"chart"` | Data line chart |
 | `"rss"` | RSS feed headlines |
 | `"notes"` | Handwritten notes area |
 
@@ -174,9 +175,9 @@ Default layout if `modules` is not specified:
 
 The status bar is always at the top and is not part of the module system.
 
-### Temperature API format
+### Chart data API format
 
-The `temp_api_url` endpoint should return a flat JSON array of readings:
+The `chart_api_url` endpoint should return a flat JSON array of time-series readings:
 
 ```json
 [
@@ -185,7 +186,19 @@ The `temp_api_url` endpoint should return a flat JSON array of readings:
 ]
 ```
 
-Readings are grouped by `sensor_name` and plotted as separate color-coded lines. Data should be ordered newest-first (the server sorts it). Sensors are sorted alphabetically and assigned colors: cyan, yellow, red, teal, purple.
+Readings are grouped by `sensor_name` and plotted as separate color-coded lines. Data should be ordered newest-first (the server sorts it). Lines are sorted alphabetically and assigned colors: cyan, yellow, red, teal, purple.
+
+### Sprite animation
+
+The server can display an animated sprite overlay (e.g. a dancing pixel art character). To set up:
+
+1. Create a horizontal BMP sprite sheet (24bpp, all frames same size, magenta `#FF00FF` background)
+2. Compile the converter: `gcc -o convert_sprite convert_sprite.c`
+3. Generate the header: `./convert_sprite spritesheet.bmp <num_frames>`
+4. This creates `sprite_data.h` — rebuild the server with `make clean && make`
+5. Set `"sprite_enabled": 1` in your config
+
+The sprite renders at `SPRITE_FPS` (default 10, set in `pinote.h`) in the bottom-right corner. Transparency uses fuzzy hue-based matching to handle compression artifacts from video-sourced sprite sheets. CPU overhead is negligible even on a Pi Zero W 2.
 
 ## Display Layout
 
@@ -197,7 +210,7 @@ Default (all full-width):
 +--------------------------------------+
 | Anime countdowns                     |
 +--------------------------------------+
-| Temperature chart                    |
+| Data chart                           |
 +--------------------------------------+
 | Notes area                           |
 +--------------------------------------+
@@ -328,13 +341,13 @@ Android App --HTTP POST--> PiNote Server --mmap--> /dev/fb0 --> LCD
                           +-----+-----+
                           | Back      |
                           | Buffer    |--memcpy flip--> Framebuffer
-                          +-----------+
-                                |
-                    +-----------+-----------+
-                    v           v           v
-               Note Store   Status Bar    APIs
+                          +-----------+                     ^
+                                |                           |
+                    +-----------+-----------+          Sprite Thread
+                    v           v           v        (front buffer,
+               Note Store   Status Bar    APIs        fuzzy keying)
                (disk +      (IP, WiFi,   (Hue, Weather, AniList,
-                memory)      clock)       Temp History, RSS)
+                memory)      clock)       Chart data, RSS)
                                             |
                               +------+------+------+
                               v      v      v      v

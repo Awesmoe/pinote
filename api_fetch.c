@@ -246,12 +246,12 @@ static void parse_temp_json(const char *json, TempHistory *hist) {
 }
 
 void fetch_temperature_history(void) {
-    if (!config.temp_api_url[0] || !config.temp_api_key[0] || config.chart_height <= 0) return;
+    if (!config.chart_api_url[0] || !config.chart_api_key[0] || config.chart_height <= 0) return;
 
     char cmd[512];
     snprintf(cmd, sizeof(cmd),
         "curl -s --connect-timeout 10 -H 'X-API-Key: %s' '%s' 2>/dev/null",
-        config.temp_api_key, config.temp_api_url);
+        config.chart_api_key, config.chart_api_url);
 
     static char response[131072]; // 128KB for a week of data
     if (!run_cmd(cmd, response, sizeof(response))) return;
@@ -267,11 +267,19 @@ typedef struct {
     char title[128];
     char countdown[64];
     long airing_at;  // unix timestamp, 0 = TBA
+    int finished;    // 1 if status is FINISHED
 } AnimeInfo;
 
 static void parse_one_anime(const char **pos, AnimeInfo *info) {
     memset(info, 0, sizeof(AnimeInfo));
     const char *p = *pos;
+
+    // Parse status
+    const char *st = strstr(p, "\"status\":\"");
+    if (st) {
+        st += 10;
+        if (strncmp(st, "FINISHED", 8) == 0) info->finished = 1;
+    }
 
     // Parse title (romaji) - handle JSON escaped quotes (\")
     const char *romaji = strstr(p, "\"romaji\":\"");
@@ -333,7 +341,7 @@ static void fetch_all_anime(const int *media_ids, int count, AnimeInfo *out) {
     pos += snprintf(query + pos, sizeof(query) - pos, "{");
     for (int i = 0; i < count && pos < (int)sizeof(query) - 200; i++) {
         pos += snprintf(query + pos, sizeof(query) - pos,
-            "a%d:Media(id:%d){title{romaji}nextAiringEpisode{airingAt episode}}",
+            "a%d:Media(id:%d){status title{romaji}nextAiringEpisode{airingAt episode}}",
             i, media_ids[i]);
     }
     pos += snprintf(query + pos, sizeof(query) - pos, "}");
@@ -642,6 +650,9 @@ void refresh_status_cache(void) {
     // Build individual anime title + countdown strings (separate for dual-color rendering)
     status_cache.num_anime_entries = 0;
     for (int i = 0; i < anime_count && i < MAX_ANIME; i++) {
+        // Skip finished anime — no upcoming episodes
+        if (anime[i].finished) continue;
+
         char *title = anime[i].title;
 
         // Truncate title if configured (max chars)

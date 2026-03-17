@@ -136,7 +136,8 @@ void draw_status_bar(Framebuffer *fb, int width) {
     static char cached_bars[16] = {0};
     static time_t last_sysinfo = 0;
     time_t now_si = time(NULL);
-    if (now_si - last_sysinfo >= config.refresh_interval || !cached_ip_str[0]) {
+    if (now_si - last_sysinfo >= config.refresh_interval || !cached_ip_str[0]
+        || strstr(cached_ip_str, "No IP")) {
         char ip[64];
         get_local_ip(ip, sizeof(ip));
         snprintf(cached_ip_str, sizeof(cached_ip_str), "IP: %s:%d", ip, PORT);
@@ -521,6 +522,7 @@ void render_screen(void) {
     }
 
     fb_flip(&fb);
+    sprite_redraw_after_flip();
     pthread_mutex_unlock(&store.lock);
 }
 
@@ -816,9 +818,14 @@ int main(void) {
     pthread_t status_tid;
     pthread_create(&status_tid, NULL, status_refresh_thread, NULL);
 
+    // Start sprite animation thread
+    pthread_t sprite_tid;
+    pthread_create(&sprite_tid, NULL, sprite_thread, NULL);
+
     // Wait
     pthread_join(server_tid, NULL);
     pthread_join(status_tid, NULL);
+    pthread_join(sprite_tid, NULL);
 
     // Cleanup
     printf("\033[?25h");
