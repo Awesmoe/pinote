@@ -22,6 +22,8 @@ static void get_sprite_position(int *sx, int *sy) {
     get_display_size(&fb, &w, &h);
     *sx = w - SPRITE_W - 10;
     *sy = h - SPRITE_H - 10;
+    if (*sx < 0) *sx = 0;
+    if (*sy < 0) *sy = 0;
 }
 
 // Fuzzy transparency check — catches any magenta-ish pixel (high R, high B, low G)
@@ -29,17 +31,18 @@ static inline int is_transparent(uint8_t r, uint8_t g, uint8_t b) {
     return (r > 150 && b > 150 && g < 100);
 }
 
-// Draw sprite frame to front buffer, restoring transparent pixels from backbuf
-// Combined pass = no flicker
-static void draw_sprite_composite(int frame, int sx, int sy) {
+// Draw sprite frame to front buffer
+// If restore_bg is set, transparent pixels are restored from backbuf (for animation).
+// If not, transparent pixels are skipped (after fb_flip, backbuf already matches).
+static void draw_sprite_to_front(int frame, int sx, int sy, int restore_bg) {
     for (int row = 0; row < SPRITE_H; row++) {
         for (int col = 0; col < SPRITE_W; col++) {
             uint8_t r = sprite_pixels[frame][row][col][0];
             uint8_t g = sprite_pixels[frame][row][col][1];
             uint8_t b = sprite_pixels[frame][row][col][2];
             if (is_transparent(r, g, b)) {
-                // Transparent: restore this pixel from back buffer
-                fb_restore_pixel(&fb, sx + col, sy + row);
+                if (restore_bg)
+                    fb_restore_pixel(&fb, sx + col, sy + row);
             } else {
                 set_pixel_front(&fb, sx + col, sy + row, r, g, b);
             }
@@ -50,18 +53,7 @@ static void draw_sprite_composite(int frame, int sx, int sy) {
 // Called from render_screen() right after fb_flip() to prevent sprite disappearing
 void sprite_redraw_after_flip(void) {
     if (!config.sprite_enabled) return;
-    // After flip, front buffer matches back buffer (no sprite).
-    // Just draw sprite pixels — transparent pixels already correct from flip.
-    for (int row = 0; row < SPRITE_H; row++) {
-        for (int col = 0; col < SPRITE_W; col++) {
-            uint8_t r = sprite_pixels[sprite_frame][row][col][0];
-            uint8_t g = sprite_pixels[sprite_frame][row][col][1];
-            uint8_t b = sprite_pixels[sprite_frame][row][col][2];
-            if (is_transparent(r, g, b))
-                continue;
-            set_pixel_front(&fb, sprite_x + col, sprite_y + row, r, g, b);
-        }
-    }
+    draw_sprite_to_front(sprite_frame, sprite_x, sprite_y, 0);
 }
 
 void *sprite_thread(void *arg) {
@@ -74,7 +66,7 @@ void *sprite_thread(void *arg) {
 
     while (running) {
         // Draw current frame (combined restore + draw, no flicker)
-        draw_sprite_composite(sprite_frame, sprite_x, sprite_y);
+        draw_sprite_to_front(sprite_frame, sprite_x, sprite_y, 1);
 
         // Advance frame
         sprite_frame = (sprite_frame + 1) % SPRITE_FRAMES;

@@ -124,6 +124,7 @@ typedef struct {
 typedef struct {
     int type;    // MODULE_CHART, MODULE_ANIME, MODULE_NOTES, MODULE_RSS
     int width;   // MODULE_WIDTH_FULL or MODULE_WIDTH_HALF
+    int span;    // 1 = normal (default), 2+ = span multiple rows on one side
 } ModuleConfig;
 
 // Config

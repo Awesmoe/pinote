@@ -95,8 +95,9 @@ static void transform_coords(Framebuffer *fb, int logical_x, int logical_y, int 
     }
 }
 
-// Set pixel (writes to back buffer, with orientation support)
-void set_pixel(Framebuffer *fb, int logical_x, int logical_y, uint8_t r, uint8_t g, uint8_t b) {
+// Internal: write pixel to a target buffer (backbuf or fbp)
+static void set_pixel_to(Framebuffer *fb, uint8_t *buf, int logical_x, int logical_y,
+                         uint8_t r, uint8_t g, uint8_t b) {
     int x, y;
     transform_coords(fb, logical_x, logical_y, &x, &y);
 
@@ -106,18 +107,23 @@ void set_pixel(Framebuffer *fb, int logical_x, int logical_y, uint8_t r, uint8_t
     long location = y * fb->finfo.line_length + x * (fb->vinfo.bits_per_pixel / 8);
 
     if (fb->vinfo.bits_per_pixel == 32) {
-        *(fb->backbuf + location + 0) = b;
-        *(fb->backbuf + location + 1) = g;
-        *(fb->backbuf + location + 2) = r;
-        *(fb->backbuf + location + 3) = 0;
+        *(buf + location + 0) = b;
+        *(buf + location + 1) = g;
+        *(buf + location + 2) = r;
+        *(buf + location + 3) = 0;
     } else if (fb->vinfo.bits_per_pixel == 24) {
-        *(fb->backbuf + location + 0) = b;
-        *(fb->backbuf + location + 1) = g;
-        *(fb->backbuf + location + 2) = r;
+        *(buf + location + 0) = b;
+        *(buf + location + 1) = g;
+        *(buf + location + 2) = r;
     } else if (fb->vinfo.bits_per_pixel == 16) {
         uint16_t rgb565 = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
-        *((uint16_t *)(fb->backbuf + location)) = rgb565;
+        *((uint16_t *)(buf + location)) = rgb565;
     }
+}
+
+// Set pixel (writes to back buffer, with orientation support)
+void set_pixel(Framebuffer *fb, int logical_x, int logical_y, uint8_t r, uint8_t g, uint8_t b) {
+    set_pixel_to(fb, fb->backbuf, logical_x, logical_y, r, g, b);
 }
 
 // Fill rectangle (logical coordinates, orientation-aware)
@@ -162,27 +168,7 @@ void fb_flip(Framebuffer *fb) {
 
 // Set pixel directly on the front buffer (for sprite animation)
 void set_pixel_front(Framebuffer *fb, int logical_x, int logical_y, uint8_t r, uint8_t g, uint8_t b) {
-    int x, y;
-    transform_coords(fb, logical_x, logical_y, &x, &y);
-
-    if (x < 0 || x >= (int)fb->vinfo.xres || y < 0 || y >= (int)fb->vinfo.yres)
-        return;
-
-    long location = y * fb->finfo.line_length + x * (fb->vinfo.bits_per_pixel / 8);
-
-    if (fb->vinfo.bits_per_pixel == 32) {
-        *(fb->fbp + location + 0) = b;
-        *(fb->fbp + location + 1) = g;
-        *(fb->fbp + location + 2) = r;
-        *(fb->fbp + location + 3) = 0;
-    } else if (fb->vinfo.bits_per_pixel == 24) {
-        *(fb->fbp + location + 0) = b;
-        *(fb->fbp + location + 1) = g;
-        *(fb->fbp + location + 2) = r;
-    } else if (fb->vinfo.bits_per_pixel == 16) {
-        uint16_t rgb565 = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
-        *((uint16_t *)(fb->fbp + location)) = rgb565;
-    }
+    set_pixel_to(fb, fb->fbp, logical_x, logical_y, r, g, b);
 }
 
 // Restore a single pixel from backbuf to front buffer

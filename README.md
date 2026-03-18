@@ -6,7 +6,7 @@ A lightweight C server that turns a Raspberry Pi with an LCD into a handwritten 
 ![Language](https://img.shields.io/badge/Language-C-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-![PiNote in action](photo2.jpg)
+![PiNote in action](photo.jpg)
 
 ## Features
 
@@ -160,9 +160,11 @@ The `modules` array controls which dashboard modules are shown and how they're l
 | `"full"` | Takes the full screen width (own row) |
 | `"half"` | Paired side-by-side with the next half-width module |
 
-Half-width modules are paired automatically: the first `"half"` in the array pairs with the second `"half"`, regardless of any full-width modules between them. Full-width modules between a pair render in their own rows before the paired row. If a half-width module has no partner, it renders on the left side only.
+Each module entry can also have an optional `"span"` field (default 1). A half-width module with `"span": 2` takes one side of the screen and spans the combined height of 2 other half-width modules stacked on the opposite side.
 
-When a fixed-height module (e.g. chart) is paired with a flexible one (e.g. notes), the row uses the fixed module's height.
+Half-width modules are grouped automatically. Modules with `span >= 2` claim their partners first, then remaining halves pair 1:1. The side each module appears on follows config order: if the spanning module comes after its first partner, it goes on the right. Full-width modules between halves render in their own rows. If a half-width module has no partner, it renders on the left side only.
+
+When a fixed-height module (e.g. chart) is paired with a flexible one (e.g. notes), the row uses the fixed module's height. For span groups, the stacked modules' heights sum up to determine the total group height.
 
 Default layout if `modules` is not specified:
 ```json
@@ -256,6 +258,28 @@ With half-width modules (non-adjacent, full-width modules render first):
 +------------------+-------------------+
 | Anime countdowns                     |
 +--------------------------------------+
+| RSS headlines                        |
++--------------------------------------+
+```
+
+With span (one module spanning multiple rows):
+
+```json
+"modules": [
+  {"type": "chart", "width": "half"},
+  {"type": "notes", "width": "half", "span": 2},
+  {"type": "anime", "width": "half"},
+  {"type": "rss", "width": "full"}
+]
+```
+```
++--------------------------------------+
+| Status bar                           |
++------------------+-------------------+
+| Chart            | Notes             |
++------------------+   (span 2)       |
+| Anime            |                   |
++------------------+-------------------+
 | RSS headlines                        |
 +--------------------------------------+
 ```

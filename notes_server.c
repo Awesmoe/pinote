@@ -254,10 +254,25 @@ void draw_anime(Framebuffer *fb, int x, int y, int w, int h) {
 
         int row_y = y + row * STATUS_ROW_HEIGHT + (STATUS_ROW_HEIGHT - 16 * FONT_SCALE) / 2;
 
-        // Left entry: title in purple, countdown color based on urgency
-        int tx = draw_text(fb, x + 10, row_y, status_cache.anime_titles[i], 180, 150, 255, FONT_SCALE);
-        tx = draw_text(fb, tx, row_y, ": ", 120, 110, 160, FONT_SCALE);
+        int char_w = 8 * FONT_SCALE;
+        int entry_w = (per_line >= 2) ? w / 2 : w;
+        int avail_chars = (entry_w - 20) / char_w;
+
+        // Left entry
         {
+            // Reserve space for ": " + countdown, truncate title to fit remainder
+            int cd_len = strlen(status_cache.anime_countdowns[i]);
+            int reserved = 2 + cd_len;  // ": " + countdown
+            int max_title = avail_chars - reserved;
+            if (max_title < 3) max_title = 3;
+
+            char title[128];
+            strncpy(title, status_cache.anime_titles[i], sizeof(title) - 1);
+            title[sizeof(title) - 1] = '\0';
+            truncate_with_dots(title, max_title);
+
+            int tx = draw_text(fb, x + 10, row_y, title, 180, 150, 255, FONT_SCALE);
+            tx = draw_text(fb, tx, row_y, ": ", 120, 110, 160, FONT_SCALE);
             uint8_t cr, cg, cb;
             anime_countdown_color(status_cache.anime_airing_at[i], &cr, &cg, &cb);
             draw_text(fb, tx, row_y, status_cache.anime_countdowns[i], cr, cg, cb, FONT_SCALE);
@@ -265,19 +280,25 @@ void draw_anime(Framebuffer *fb, int x, int y, int w, int h) {
 
         // Right entry (if paired and exists)
         if (per_line >= 2 && i + 1 < status_cache.num_anime_entries) {
-            // Build full string to measure width for right-alignment
-            char full[256];
-            snprintf(full, sizeof(full), "%s: %s",
-                     status_cache.anime_titles[i + 1], status_cache.anime_countdowns[i + 1]);
-            int tw = strlen(full) * 8 * FONT_SCALE;
-            int rx = x + w - tw - 10;
-            rx = draw_text(fb, rx, row_y, status_cache.anime_titles[i + 1], 180, 150, 255, FONT_SCALE);
+            int cd_len = strlen(status_cache.anime_countdowns[i + 1]);
+            int reserved = 2 + cd_len;
+            int max_title = avail_chars - reserved;
+            if (max_title < 3) max_title = 3;
+
+            char title[128];
+            strncpy(title, status_cache.anime_titles[i + 1], sizeof(title) - 1);
+            title[sizeof(title) - 1] = '\0';
+            truncate_with_dots(title, max_title);
+
+            // Measure full width for right-alignment
+            int full_w = (strlen(title) + 2 + cd_len) * char_w;
+            int rx = x + w - full_w - 10;
+
+            rx = draw_text(fb, rx, row_y, title, 180, 150, 255, FONT_SCALE);
             rx = draw_text(fb, rx, row_y, ": ", 120, 110, 160, FONT_SCALE);
-            {
-                uint8_t cr, cg, cb;
-                anime_countdown_color(status_cache.anime_airing_at[i + 1], &cr, &cg, &cb);
-                draw_text(fb, rx, row_y, status_cache.anime_countdowns[i + 1], cr, cg, cb, FONT_SCALE);
-            }
+            uint8_t cr, cg, cb;
+            anime_countdown_color(status_cache.anime_airing_at[i + 1], &cr, &cg, &cb);
+            draw_text(fb, rx, row_y, status_cache.anime_countdowns[i + 1], cr, cg, cb, FONT_SCALE);
         }
 
         row++;
@@ -452,24 +473,58 @@ void render_screen(void) {
     draw_status_bar(&fb, display_width);
     int y = STATUS_ROW_HEIGHT;
 
-    // Pre-scan: pair up half-width modules (first half pairs with next half found)
-    // partner[i] = index of paired module, or -1 if unpaired/full
-    int partner[MAX_MODULES];
-    for (int i = 0; i < config.num_modules; i++) partner[i] = -1;
-
-    int first_unpaired = -1;
+    // Pre-scan: group half-width modules
+    // group_leader[i] = index of the leader module for this group, or -1
+    // partners[i][0..3] = indices of stacked partners for leader i
+    // partner_count[i] = number of partners for leader i
+    int group_leader[MAX_MODULES];
+    int partners[MAX_MODULES][4];
+    int partner_count[MAX_MODULES];
     for (int i = 0; i < config.num_modules; i++) {
-        if (config.modules[i].width != MODULE_WIDTH_HALF) continue;
-        if (first_unpaired < 0) {
-            first_unpaired = i;
-        } else {
-            partner[first_unpaired] = i;
-            partner[i] = first_unpaired;
-            first_unpaired = -1;
+        group_leader[i] = -1;
+        partner_count[i] = 0;
+    }
+
+    // Collect half-width module indices in config order
+    int halves[MAX_MODULES];
+    int num_halves = 0;
+    for (int i = 0; i < config.num_modules; i++)
+        if (config.modules[i].width == MODULE_WIDTH_HALF)
+            halves[num_halves++] = i;
+
+    // Pass 1: span >= 2 modules claim nearest unclaimed halves as partners
+    for (int h = 0; h < num_halves; h++) {
+        int idx = halves[h];
+        if (config.modules[idx].span < 2) continue;
+
+        group_leader[idx] = idx;
+        int claimed = 0;
+        for (int j = 0; j < num_halves && claimed < config.modules[idx].span; j++) {
+            int pidx = halves[j];
+            if (pidx == idx || group_leader[pidx] >= 0) continue;
+            group_leader[pidx] = idx;
+            partners[idx][claimed++] = pidx;
+        }
+        partner_count[idx] = claimed;
+    }
+
+    // Pass 2: remaining span-1 modules pair 1:1
+    for (int h = 0; h < num_halves; h++) {
+        int idx = halves[h];
+        if (group_leader[idx] >= 0) continue;
+
+        group_leader[idx] = idx;
+        for (int j = h + 1; j < num_halves; j++) {
+            int pidx = halves[j];
+            if (group_leader[pidx] >= 0) continue;
+            group_leader[pidx] = idx;
+            partners[idx][0] = pidx;
+            partner_count[idx] = 1;
+            break;
         }
     }
 
-    // Render: process modules in config order, skip right-side partners (drawn with their left)
+    // Render: process modules in config order
     int drawn[MAX_MODULES] = {0};
 
     for (int i = 0; i < config.num_modules; i++) {
@@ -483,36 +538,83 @@ void render_screen(void) {
             if (h <= 0) continue;
             draw_module(&fb, m->type, 0, y, display_width, h);
             y += h;
-        } else if (partner[i] >= 0) {
-            // Paired half-width modules
+
+        } else if (group_leader[i] >= 0 && group_leader[i] != i) {
+            // Claimed partner — will be drawn by its leader, skip
+            continue;
+
+        } else if (group_leader[i] == i && partner_count[i] > 0) {
+            // Leader of a group (span or 1:1 pair)
             int half_w = display_width / 2;
-            int pi = partner[i];
+            int pc = partner_count[i];
 
-            int left_h_raw = get_module_height(m->type);
-            int right_h_raw = get_module_height(config.modules[pi].type);
-            int left_h = (left_h_raw == MODULE_HEIGHT_FILL) ? display_height - y : left_h_raw;
-            int right_h = (right_h_raw == MODULE_HEIGHT_FILL) ? display_height - y : right_h_raw;
+            // Determine sides: if leader comes after first partner in config,
+            // leader goes right (partners stack left). Otherwise leader left.
+            int leader_right = (partners[i][0] < i);
+            int span_x = leader_right ? half_w : 0;
+            int stack_x = leader_right ? 0 : half_w;
+            int span_w = leader_right ? (display_width - half_w) : half_w;
+            int stack_w = leader_right ? half_w : (display_width - half_w);
 
-            // Row height: prefer fixed height over "fill remaining"
-            int row_h;
-            if (left_h_raw != MODULE_HEIGHT_FILL && right_h_raw != MODULE_HEIGHT_FILL)
-                row_h = left_h > right_h ? left_h : right_h;
-            else if (left_h_raw != MODULE_HEIGHT_FILL)
-                row_h = left_h;
-            else if (right_h_raw != MODULE_HEIGHT_FILL)
-                row_h = right_h;
+            // Calculate stacked-side heights
+            int span_h_raw = get_module_height(m->type);
+            int sh_raw[4], sh[4];
+            int stack_fixed_total = 0;
+            int stack_fill_count = 0;
+            for (int s = 0; s < pc; s++) {
+                sh_raw[s] = get_module_height(config.modules[partners[i][s]].type);
+                if (sh_raw[s] == MODULE_HEIGHT_FILL)
+                    stack_fill_count++;
+                else
+                    stack_fixed_total += sh_raw[s];
+            }
+
+            // Total group height: fixed side wins over fill
+            int total_h;
+            if (span_h_raw != MODULE_HEIGHT_FILL)
+                total_h = span_h_raw;
+            else if (stack_fixed_total > 0)
+                total_h = stack_fixed_total;
             else
-                row_h = display_height - y;
+                total_h = display_height - y;
 
-            if (row_h <= 0) { drawn[pi] = 1; continue; }
+            if (total_h <= 0) {
+                for (int s = 0; s < pc; s++) drawn[partners[i][s]] = 1;
+                continue;
+            }
 
-            draw_module(&fb, m->type, 0, y, half_w, row_h);
-            draw_module(&fb, config.modules[pi].type, half_w, y,
-                        display_width - half_w, row_h);
-            drawn[pi] = 1;
-            y += row_h;
+            // Resolve individual stacked heights
+            int remaining = total_h;
+            for (int s = 0; s < pc; s++) {
+                if (sh_raw[s] != MODULE_HEIGHT_FILL) {
+                    sh[s] = sh_raw[s];
+                    remaining -= sh[s];
+                }
+            }
+            for (int s = 0; s < pc; s++) {
+                if (sh_raw[s] == MODULE_HEIGHT_FILL) {
+                    sh[s] = stack_fill_count > 0 ? remaining / stack_fill_count : remaining;
+                    remaining -= sh[s];
+                    stack_fill_count--;
+                }
+            }
+
+            // Draw spanning module (full group height)
+            draw_module(&fb, m->type, span_x, y, span_w, total_h);
+
+            // Draw stacked partners
+            int sy = y;
+            for (int s = 0; s < pc; s++) {
+                if (sh[s] > 0)
+                    draw_module(&fb, config.modules[partners[i][s]].type,
+                                stack_x, sy, stack_w, sh[s]);
+                drawn[partners[i][s]] = 1;
+                sy += sh[s];
+            }
+            y += total_h;
+
         } else {
-            // Unpaired half-width: render as half (left side only)
+            // Unpaired half-width: render on left side only
             int h = get_module_height(m->type);
             if (h == MODULE_HEIGHT_FILL) h = display_height - y;
             if (h <= 0) continue;
@@ -818,14 +920,15 @@ int main(void) {
     pthread_t status_tid;
     pthread_create(&status_tid, NULL, status_refresh_thread, NULL);
 
-    // Start sprite animation thread
-    pthread_t sprite_tid;
-    pthread_create(&sprite_tid, NULL, sprite_thread, NULL);
+    // Start sprite animation thread (only if enabled)
+    pthread_t sprite_tid = 0;
+    if (config.sprite_enabled)
+        pthread_create(&sprite_tid, NULL, sprite_thread, NULL);
 
     // Wait
     pthread_join(server_tid, NULL);
     pthread_join(status_tid, NULL);
-    pthread_join(sprite_tid, NULL);
+    if (sprite_tid) pthread_join(sprite_tid, NULL);
 
     // Cleanup
     printf("\033[?25h");

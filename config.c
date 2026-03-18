@@ -199,6 +199,17 @@ void load_config(const char *path, AppConfig *cfg) {
                         m->width = MODULE_WIDTH_HALF;
                 }
 
+                // Parse "span" (default 1)
+                m->span = 1;
+                const char *sp = strstr(obj, "\"span\"");
+                if (sp && sp < obj_end) {
+                    sp += 6;
+                    while (*sp && (*sp == ' ' || *sp == ':' || *sp == '\t')) sp++;
+                    int sv = 0;
+                    if (sscanf(sp, "%d", &sv) == 1 && sv >= 2)
+                        m->span = sv;
+                }
+
                 if (m->type >= 0)
                     cfg->num_modules++;
 
@@ -209,9 +220,9 @@ void load_config(const char *path, AppConfig *cfg) {
 
     // Default module layout if none specified
     if (cfg->num_modules == 0) {
-        cfg->modules[0] = (ModuleConfig){MODULE_ANIME, MODULE_WIDTH_FULL};
-        cfg->modules[1] = (ModuleConfig){MODULE_CHART, MODULE_WIDTH_FULL};
-        cfg->modules[2] = (ModuleConfig){MODULE_NOTES, MODULE_WIDTH_FULL};
+        cfg->modules[0] = (ModuleConfig){MODULE_ANIME, MODULE_WIDTH_FULL, 1};
+        cfg->modules[1] = (ModuleConfig){MODULE_CHART, MODULE_WIDTH_FULL, 1};
+        cfg->modules[2] = (ModuleConfig){MODULE_NOTES, MODULE_WIDTH_FULL, 1};
         cfg->num_modules = 3;
     }
 }
