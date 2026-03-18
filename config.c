@@ -95,8 +95,8 @@ void load_config(const char *path, AppConfig *cfg) {
     else
         json_get_int(buf, "anime_truncate", &cfg->anime_truncate);
 
-    // Parse anime_per_line (default: 2)
-    cfg->anime_per_line = 2;
+    // Parse anime_per_line (default: 1)
+    cfg->anime_per_line = 1;
     json_get_int(buf, "anime_per_line", &cfg->anime_per_line);
 
     // Parse note_scale (default: 0.6)
@@ -121,7 +121,7 @@ void load_config(const char *path, AppConfig *cfg) {
 
     cfg->refresh_interval = CACHE_TTL;
     json_get_int(buf, "refresh_interval", &cfg->refresh_interval);
-    if (cfg->refresh_interval < 30) cfg->refresh_interval = 30; // minimum 30s
+    if (cfg->refresh_interval < 300) cfg->refresh_interval = 300; // minimum 5 minutes
 
     // Parse RSS feed settings
     json_get_string(buf, "rss_url", cfg->rss_url, sizeof(cfg->rss_url));

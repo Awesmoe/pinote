@@ -35,7 +35,7 @@
 #define FONT_SCALE 2
 #define MAX_ANIME 10
 #define CONFIG_PATH "pinote_config.json"
-#define CACHE_TTL 300  // 5 minutes
+#define CACHE_TTL 900  // 15 minutes
 
 // Temperature chart settings
 #define MAX_SENSORS 5
@@ -73,7 +73,7 @@
 #define SEP_MINOR_B 45
 
 // RSS feed
-#define MAX_RSS_ITEMS 10
+#define MAX_RSS_ITEMS 20
 
 // Sprite animation
 #define SPRITE_FPS 10
