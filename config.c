@@ -138,6 +138,10 @@ void load_config(const char *path, AppConfig *cfg) {
     // Parse sprite toggle (default: off)
     json_get_int(buf, "sprite_enabled", &cfg->sprite_enabled);
 
+    // Parse orientation (1=landscape, 2=portrait, 3=landscape_flip, 4=portrait_flip)
+    json_get_int(buf, "orientation", &cfg->orientation);
+    if (cfg->orientation < 1 || cfg->orientation > 4) cfg->orientation = 0;
+
     // Parse anilist_media_ids array
     const char *ids = strstr(buf, "\"anilist_media_ids\"");
     if (ids) {

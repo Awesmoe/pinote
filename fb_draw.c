@@ -37,17 +37,8 @@ int fb_init(Framebuffer *fb, const char *device) {
         return -1;
     }
 
-    // Determine orientation
-    if (FORCE_ORIENTATION > 0) {
-        current_orientation = FORCE_ORIENTATION;
-    } else {
-        // Auto-detect: portrait if height > width
-        if (fb->vinfo.yres > fb->vinfo.xres) {
-            current_orientation = ORIENTATION_PORTRAIT;
-        } else {
-            current_orientation = ORIENTATION_LANDSCAPE;
-        }
-    }
+    // Set orientation from config (default: landscape)
+    current_orientation = config.orientation > 0 ? config.orientation : ORIENTATION_LANDSCAPE;
 
     return 0;
 }

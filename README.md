@@ -134,6 +134,7 @@ Create a `pinote_config.json` in the same directory as the server:
 | `chart_api_url` | string | — | URL to fetch chart data from (see format below) |
 | `chart_api_key` | string | — | API key sent as `X-API-Key` header |
 | `chart_height` | int | `200` | Chart height in pixels. Set to `0` to disable |
+| `orientation` | int | `1` | Display orientation: 1=landscape, 2=portrait, 3=landscape flipped, 4=portrait flipped |
 | `sprite_enabled` | int | `0` | Set to `1` to show animated sprite overlay |
 | `refresh_interval` | int | `300` | How often to refresh API data in seconds (minimum 30) |
 | `rss_url` | string | — | RSS feed URL |
@@ -327,15 +328,16 @@ Clear all notes from the screen and disk.
 
 ## Display orientation
 
-The display orientation is set via `FORCE_ORIENTATION` in `pinote.h`:
+The display orientation is set via `"orientation"` in `pinote_config.json`:
 
 | Value | Orientation |
 |-------|-------------|
-| `0` | Auto-detect |
 | `1` | Landscape (0°) |
 | `2` | Portrait (90°) |
 | `3` | Landscape flipped (180°) |
 | `4` | Portrait flipped (270°) |
+
+Defaults to landscape if not set.
 
 ## Hiding the console cursor
 

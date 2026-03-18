@@ -479,6 +479,7 @@ static int parse_rss_xml(const char *response, RssCache *tmp) {
         char title_raw[256] = {0};
         if (xml_get_text(item_start, item_end, "title", title_raw, sizeof(title_raw)))
             decode_html_entities(title_raw, item->title, sizeof(item->title));
+        strip_utf8_accents(item->title);
 
         char pubdate[64] = {0};
         if (xml_get_text(item_start, item_end, "pubDate", pubdate, sizeof(pubdate)))
@@ -512,7 +513,10 @@ static int rss_json_get_string(const char *json, const char *end, const char *ke
                 unsigned int cp = 0;
                 if (sscanf(pos + 1, "%4x", &cp) == 1) {
                     pos += 5;  // skip uXXXX
-                    switch (cp) {
+                    // Latin accented chars (U+00C0-U+00FF) → ASCII base
+                    if (cp >= 0x00C0 && cp <= 0x00FF) {
+                        out[i++] = latin_accent_map[cp - 0x00C0];
+                    } else switch (cp) {
                         case 0x201C: case 0x201D: out[i++] = '"'; break;   // curly double quotes
                         case 0x2018: case 0x2019: out[i++] = '\''; break;  // curly single quotes
                         case 0x2013: case 0x2014: out[i++] = '-'; break;   // en/em dash
@@ -555,6 +559,7 @@ static int parse_rss_json(const char *response, RssCache *tmp) {
         RssItem *item = &tmp->items[tmp->num_items];
 
         rss_json_get_string(obj, obj_end, "title", item->title, sizeof(item->title));
+        strip_utf8_accents(item->title);
 
         char pubdate[64] = {0};
         if (rss_json_get_string(obj, obj_end, "pubDate", pubdate, sizeof(pubdate)))
@@ -655,7 +660,8 @@ void refresh_status_cache(void) {
 
         char *title = anime[i].title;
 
-        // Truncate title if configured (max chars)
+        // Clean up title: strip accents, truncate if configured
+        strip_utf8_accents(title);
         if (config.anime_truncate > 0)
             truncate_with_dots(title, config.anime_truncate);
 

@@ -42,11 +42,7 @@
 #define MAX_TEMP_POINTS 250   // ~10 days of hourly data
 #define DEFAULT_CHART_HEIGHT 200
 
-// Orientation settings
-// Set to 0 for auto-detect, or force: 1=landscape, 2=portrait, 3=landscape_flipped, 4=portrait_flipped
-#define FORCE_ORIENTATION 4
-
-// Orientation constants
+// Orientation constants (set via "orientation" in pinote_config.json)
 #define ORIENTATION_LANDSCAPE 1         // 0° - normal horizontal
 #define ORIENTATION_PORTRAIT 2          // 90° clockwise - vertical
 #define ORIENTATION_LANDSCAPE_FLIP 3    // 180° - upside down horizontal
@@ -150,6 +146,7 @@ typedef struct {
     int rss_truncate;        // max characters for RSS titles (0 = no truncation)
     int rss_per_line;        // RSS items per row (1 or 2, default 1)
     int sprite_enabled;      // 1 = show animated sprite, 0 = off (default 0)
+    int orientation;         // 1=landscape, 2=portrait, 3=landscape_flip, 4=portrait_flip
     ModuleConfig modules[MAX_MODULES];
     int num_modules;
 } AppConfig;
@@ -228,6 +225,42 @@ static inline void truncate_with_dots(char *str, int max_chars) {
         str[max_chars - 1] = '.';
         str[max_chars] = '\0';
     }
+}
+
+// Strip UTF-8 accented Latin characters to ASCII equivalents (in-place)
+// Handles 2-byte UTF-8 sequences (U+00C0-U+00FF): é→e, ü→u, ñ→n, etc.
+// ASCII base for U+00C0..U+00FF (Latin-1 Supplement accented chars)
+// À Á Â Ã Ä Å Æ Ç È É Ê Ë Ì Í Î Ï Ð Ñ Ò Ó Ô Õ Ö × Ø Ù Ú Û Ü Ý Þ ß
+// à á â ã ä å æ ç è é ê ë ì í î ï ð ñ ò ó ô õ ö ÷ ø ù ú û ü ý þ ÿ
+static const char latin_accent_map[64] =
+    "AAAAAAACEEEEIIII" "DNOOOOOxOUUUUYTs"
+    "aaaaaaaceeeeiiii" "dnooooo/ouuuuyty";
+
+static inline void strip_utf8_accents(char *str) {
+    unsigned char *s = (unsigned char *)str;
+    char *out = str;
+    while (*s) {
+        if (s[0] == 0xC3 && s[1] >= 0x80 && s[1] <= 0xBF) {
+            // 2-byte UTF-8: U+00C0..U+00FF → mapped ASCII
+            *out++ = latin_accent_map[s[1] - 0x80];
+            s += 2;
+        } else if ((s[0] & 0xE0) == 0xC0 && (s[1] & 0xC0) == 0x80) {
+            // Other 2-byte UTF-8: replace with '?'
+            *out++ = '?';
+            s += 2;
+        } else if ((s[0] & 0xF0) == 0xE0 && (s[1] & 0xC0) == 0x80 && (s[2] & 0xC0) == 0x80) {
+            // 3-byte UTF-8: replace with '?'
+            *out++ = '?';
+            s += 3;
+        } else if ((s[0] & 0xF8) == 0xF0 && (s[1] & 0xC0) == 0x80 && (s[2] & 0xC0) == 0x80 && (s[3] & 0xC0) == 0x80) {
+            // 4-byte UTF-8: replace with '?'
+            *out++ = '?';
+            s += 4;
+        } else {
+            *out++ = *s++;
+        }
+    }
+    *out = '\0';
 }
 
 // ============================================================
