@@ -28,7 +28,7 @@ A lightweight C server that turns a Raspberry Pi with an LCD into a handwritten 
 
 ## Requirements
 
-- Raspberry Pi (tested on Pi Zero W 2) running Linux
+- Raspberry Pi (tested on Pi Zero W 2) running Linux — also runs on the original Pi Zero W (512MB, single core) at ~1.7% memory and ~5% CPU with all modules active
 - LCD connected via HDMI with framebuffer at `/dev/fb0`
 - GCC and pthreads
 
