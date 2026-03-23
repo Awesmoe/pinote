@@ -90,6 +90,8 @@ sudo systemctl enable pinote
 sudo systemctl start pinote
 ```
 
+**Tip:** Pair with [pinote-hue-motion](https://github.com/Awesmoe/pinote-hue-motion) to turn the display on/off automatically using a Philips Hue motion sensor.
+
 ## Configuration
 
 Create a `pinote_config.json` in the same directory as the server:
@@ -261,6 +263,10 @@ With span (one module spanning multiple rows):
 | RSS headlines                        |
 +--------------------------------------+
 ```
+
+## Sending Notes
+
+Notes are sent from [SPenNotes](https://github.com/Awesmoe/pinote-apk), a companion Android app with S Pen support. Any HTTP client that sends the right JSON will also work — see the API below.
 
 ## API
 
