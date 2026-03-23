@@ -828,6 +828,7 @@ void refresh_status_cache(void) {
     // Notify via webhook if any anime just aired since last refresh
     // Must happen BEFORE qsort — indices match config order (stable between refreshes)
     static long prev_airing_at[MAX_ANIME] = {0};
+    static char prev_countdown[MAX_ANIME][64] = {{0}};
     static int prev_initialized = 0;
 
     if (config.webhook_url[0] && prev_initialized) {
@@ -844,9 +845,11 @@ void refresh_status_cache(void) {
                 title[sizeof(title) - 1] = '\0';
                 truncate_with_dots(title, 60);
                 char msg[256];
-                const char *ep = strstr(anime[i].countdown, "Ep");
+                // Use prev_countdown for episode number — current one already advanced
+                const char *ep = strstr(prev_countdown[i], "Ep");
                 if (anime[i].airing_at <= 0)
-                    snprintf(msg, sizeof(msg), "%s just aired! (final)", title);
+                    snprintf(msg, sizeof(msg), ep ? "%s %s just aired! (final)" : "%s just aired! (final)",
+                             title, ep);
                 else
                     snprintf(msg, sizeof(msg), ep ? "%s %s just aired!" : "%s just aired!",
                              title, ep);
@@ -855,9 +858,12 @@ void refresh_status_cache(void) {
         }
     }
 
-    // Save current airing_at for next comparison
-    for (int i = 0; i < anime_count; i++)
+    // Save current state for next comparison
+    for (int i = 0; i < anime_count; i++) {
         prev_airing_at[i] = anime[i].airing_at;
+        strncpy(prev_countdown[i], anime[i].countdown, sizeof(prev_countdown[i]) - 1);
+        prev_countdown[i][sizeof(prev_countdown[i]) - 1] = '\0';
+    }
     prev_initialized = 1;
 
     // Sort by airing time (soonest first, TBA last)
