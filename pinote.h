@@ -52,7 +52,8 @@
 #define MODULE_CHART  0
 #define MODULE_ANIME  1
 #define MODULE_NOTES  2
-#define MODULE_RSS    3
+#define MODULE_RSS      3
+#define MODULE_FORECAST 4
 #define MODULE_WIDTH_FULL 0
 #define MODULE_WIDTH_HALF 1
 #define MODULE_HEIGHT_FILL -1  // returned by get_module_height for "fill remaining space"
@@ -74,6 +75,9 @@
 
 // RSS feed
 #define MAX_RSS_ITEMS 20
+
+// Weather forecast
+#define MAX_FORECAST_DAYS 7
 
 // Sprite animation
 #define SPRITE_FPS 10
@@ -147,6 +151,8 @@ typedef struct {
     int rss_per_line;        // RSS items per row (1 or 2, default 1)
     int sprite_enabled;      // 1 = show animated sprite, 0 = off (default 0)
     int orientation;         // 1=landscape, 2=portrait, 3=landscape_flip, 4=portrait_flip
+    char webhook_url[256];   // Discord/Slack/generic webhook for notifications
+    int forecast_days;       // forecast days to show (1-7, default 3, 0 = disabled)
     ModuleConfig modules[MAX_MODULES];
     int num_modules;
 } AppConfig;
@@ -201,8 +207,25 @@ typedef struct {
     time_t last_fetched;
 } RssCache;
 
+// Weather forecast data
+typedef struct {
+    char day_name[4];    // "Mon", "Tue", etc.
+    int weather_code;    // WMO code (0-99)
+    float temp_max;
+    float temp_min;
+    float wind_max;      // km/h
+    float uv_max;
+    float precip_mm;
+} ForecastDay;
+
+typedef struct {
+    ForecastDay days[MAX_FORECAST_DAYS];
+    int num_days;
+    time_t last_fetched;
+} ForecastCache;
+
 // ============================================================
-// Globals (defined in notes_server.c, rss.c)
+// Globals (defined in notes_server.c, rss.c, forecast.c)
 // ============================================================
 
 extern NoteStore store;
@@ -210,9 +233,11 @@ extern Framebuffer fb;
 extern AppConfig config;
 extern StatusCache status_cache;
 extern volatile int running;
+extern volatile int first_render_done;
 extern int server_socket;
 extern TempHistory temp_history;
 extern RssCache rss_cache;
+extern ForecastCache forecast_cache;
 
 // ============================================================
 // Shared helpers
@@ -307,6 +332,13 @@ void draw_chart(Framebuffer *fb, int chart_x, int chart_y, int chart_w, int char
 
 void draw_rss(Framebuffer *fb, int x, int y, int w, int h);
 int  get_rss_height(void);
+
+// ============================================================
+// forecast.c
+// ============================================================
+
+void draw_forecast(Framebuffer *fb, int x, int y, int w, int h);
+int  get_forecast_height(void);
 
 // ============================================================
 // sprite.c

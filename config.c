@@ -138,6 +138,15 @@ void load_config(const char *path, AppConfig *cfg) {
     // Parse sprite toggle (default: off)
     json_get_int(buf, "sprite_enabled", &cfg->sprite_enabled);
 
+    // Parse webhook URL for notifications
+    json_get_string(buf, "webhook_url", cfg->webhook_url, sizeof(cfg->webhook_url));
+
+    // Parse forecast days (default 3, 0 = disabled, max 7)
+    cfg->forecast_days = 3;
+    json_get_int(buf, "forecast_days", &cfg->forecast_days);
+    if (cfg->forecast_days < 0) cfg->forecast_days = 0;
+    if (cfg->forecast_days > MAX_FORECAST_DAYS) cfg->forecast_days = MAX_FORECAST_DAYS;
+
     // Parse orientation (1=landscape, 2=portrait, 3=landscape_flip, 4=portrait_flip)
     json_get_int(buf, "orientation", &cfg->orientation);
     if (cfg->orientation < 1 || cfg->orientation > 4) cfg->orientation = 0;
@@ -195,6 +204,7 @@ void load_config(const char *path, AppConfig *cfg) {
                 else if (strcmp(type_str, "anime") == 0) m->type = MODULE_ANIME;
                 else if (strcmp(type_str, "notes") == 0) m->type = MODULE_NOTES;
                 else if (strcmp(type_str, "rss") == 0) m->type = MODULE_RSS;
+                else if (strcmp(type_str, "forecast") == 0) m->type = MODULE_FORECAST;
 
                 // Parse "width"
                 const char *wp = strstr(obj, "\"width\"");

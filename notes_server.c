@@ -14,6 +14,7 @@ Framebuffer fb = {0};
 AppConfig config = {0};
 StatusCache status_cache = {0};
 volatile int running = 1;
+volatile int first_render_done = 0;
 int server_socket = -1;
 TempHistory temp_history = {0};
 
@@ -312,8 +313,9 @@ void draw_anime(Framebuffer *fb, int x, int y, int w, int h) {
 // Notes module
 // ============================================================
 
-// Check if all notes fit at a given scale within a bounding area
-static int notes_fit_at_scale(float scale, int ax, int ay, int aw, int ah) {
+// Layout notes at a given scale. If draw_fb is non-NULL, also draws them.
+// Returns 1 if all notes fit within the bounding area, 0 if they overflow.
+static int layout_notes(Framebuffer *draw_fb, float scale, int ax, int ay, int aw, int ah) {
     int padding = 20;
     int current_x = ax + padding;
     int current_y = ay + padding;
@@ -342,8 +344,27 @@ static int notes_fit_at_scale(float scale, int ax, int ay, int aw, int ah) {
             notes_in_current_row = 0;
         }
 
-        if (current_y + scaled_height > ay + ah) {
+        if (current_y + scaled_height > ay + ah)
             return 0;
+
+        if (draw_fb) {
+            for (int s = 0; s < note->num_strokes; s++) {
+                Stroke *stroke = &note->strokes[s];
+                if (stroke->num_points < 2) continue;
+
+                int x_prev = (int)(stroke->points[0].x * scale + current_x + 0.5f);
+                int y_prev = (int)(stroke->points[0].y * scale + current_y + 0.5f);
+                int thickness = (int)(8 * scale);
+                if (thickness < 1) thickness = 1;
+
+                for (int p = 1; p < stroke->num_points; p++) {
+                    int x_curr = (int)(stroke->points[p].x * scale + current_x + 0.5f);
+                    int y_curr = (int)(stroke->points[p].y * scale + current_y + 0.5f);
+                    draw_line(draw_fb, x_prev, y_prev, x_curr, y_curr, 255, 255, 255, thickness);
+                    x_prev = x_curr;
+                    y_prev = y_curr;
+                }
+            }
         }
 
         current_x += scaled_width + padding;
@@ -356,71 +377,13 @@ static int notes_fit_at_scale(float scale, int ax, int ay, int aw, int ah) {
 void draw_notes_area(Framebuffer *fb, int x, int y, int w, int h) {
     if (store.num_notes == 0) return;
 
-    // Find the best scale
+    // Find the best scale that fits
     float scale = config.note_scale;
-    while (scale > MIN_NOTE_SCALE && !notes_fit_at_scale(scale, x, y, w, h)) {
+    while (scale > MIN_NOTE_SCALE && !layout_notes(NULL, scale, x, y, w, h))
         scale -= 0.05f;
-    }
     if (scale < MIN_NOTE_SCALE) scale = MIN_NOTE_SCALE;
 
-    int padding = 20;
-    int current_x = x + padding;
-    int current_y = y + padding;
-    int row_height = 0;
-    int max_notes_per_row = 10;
-    int notes_in_current_row = 0;
-
-    for (int n = 0; n < store.num_notes; n++) {
-        Note *note = &store.notes[n];
-
-        if (note->is_linebreak) {
-            current_x = x + padding;
-            current_y += row_height + padding;
-            row_height = 0;
-            notes_in_current_row = 0;
-            continue;
-        }
-
-        int scaled_width = (int)(note->width * scale + 0.5f);
-        int scaled_height = (int)(note->height * scale + 0.5f);
-
-        if (current_x + scaled_width + padding > x + w ||
-            notes_in_current_row >= max_notes_per_row) {
-            current_x = x + padding;
-            current_y += row_height + padding;
-            row_height = 0;
-            notes_in_current_row = 0;
-        }
-
-        if (current_y + scaled_height > y + h) break;
-
-        int anchor_x = current_x;
-        int anchor_y = current_y;
-
-        for (int s = 0; s < note->num_strokes; s++) {
-            Stroke *stroke = &note->strokes[s];
-            if (stroke->num_points < 2) continue;
-
-            int x_prev = (int)(stroke->points[0].x * scale + anchor_x + 0.5f);
-            int y_prev = (int)(stroke->points[0].y * scale + anchor_y + 0.5f);
-            int thickness = (int)(8 * scale);
-            if (thickness < 1) thickness = 1;
-
-            for (int p = 1; p < stroke->num_points; p++) {
-                int x_curr = (int)(stroke->points[p].x * scale + anchor_x + 0.5f);
-                int y_curr = (int)(stroke->points[p].y * scale + anchor_y + 0.5f);
-
-                draw_line(fb, x_prev, y_prev, x_curr, y_curr, 255, 255, 255, thickness);
-
-                x_prev = x_curr;
-                y_prev = y_curr;
-            }
-        }
-
-        current_x += scaled_width + padding;
-        if (scaled_height > row_height) row_height = scaled_height;
-        notes_in_current_row++;
-    }
+    layout_notes(fb, scale, x, y, w, h);
 }
 
 // ============================================================
@@ -439,6 +402,8 @@ static int get_module_height(int type) {
             return MODULE_HEIGHT_FILL;
         case MODULE_RSS:
             return get_rss_height();
+        case MODULE_FORECAST:
+            return get_forecast_height();
         default:
             return 0;
     }
@@ -458,6 +423,9 @@ static void draw_module(Framebuffer *fb, int type, int x, int y, int w, int h) {
             break;
         case MODULE_RSS:
             draw_rss(fb, x, y, w, h);
+            break;
+        case MODULE_FORECAST:
+            draw_forecast(fb, x, y, w, h);
             break;
     }
 }
@@ -625,6 +593,7 @@ void render_screen(void) {
 
     fb_flip(&fb);
     sprite_redraw_after_flip();
+    first_render_done = 1;
     pthread_mutex_unlock(&store.lock);
 }
 
@@ -637,7 +606,9 @@ static void *status_refresh_thread(void *arg) {
     while (running) {
         time_t now = time(NULL);
         if (now - status_cache.last_fetched >= config.refresh_interval) {
+            pthread_mutex_lock(&store.lock);
             refresh_status_cache();
+            pthread_mutex_unlock(&store.lock);
         }
         render_screen();
         sleep(30);
@@ -748,6 +719,7 @@ static int read_full_request(int client_socket, char *buffer, int buffer_size) {
             char *cl_header = strstr(buffer, "Content-Length: ");
             if (cl_header) {
                 sscanf(cl_header + strlen("Content-Length: "), "%d", &content_length);
+                if (content_length > buffer_size - 1) content_length = buffer_size - 1;
             }
             break;
         }

@@ -1,5 +1,6 @@
 {
   "orientation": 1,
+  "webhook_url": "https://discord.com/api/webhooks/123123123...",
   "hue_bridge_ip": "192.168.0.10",
   "hue_api_key": "YOUR_HUE_API_KEY_HERE",
   "hue_sensor_ids": ["4", "42"],
@@ -9,6 +10,7 @@
   "note_scale": 0.6,
   "latitude": 52.52,
   "longitude": 13.405,
+  "forecast_days": 3,
   "chart_api_url": "https://example.com/api/temperatures",
   "chart_api_key": "YOUR_API_KEY_HERE",
   "chart_height": 200,

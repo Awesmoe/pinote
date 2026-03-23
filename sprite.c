@@ -6,15 +6,15 @@
  * in a single pass — no flicker.
  *
  * The sprite data is a const array in sprite_data.h, generated from a BMP
- * sprite sheet by convert_sprite.c. Magenta (#FF00FF) pixels are transparent.
+ * sprite sheet by convert_sprite.c. Green-screen pixels are transparent.
  */
 #include "pinote.h"
 #include "sprite_data.h"
 
 // Current sprite state (read by render_screen to redraw after fb_flip)
 static int sprite_frame = 0;
-static int sprite_x = 0;
-static int sprite_y = 0;
+static int sprite_x = -1;
+static int sprite_y = -1;
 
 // Sprite position (logical coordinates, bottom-right of screen)
 static void get_sprite_position(int *sx, int *sy) {
@@ -26,9 +26,9 @@ static void get_sprite_position(int *sx, int *sy) {
     if (*sy < 0) *sy = 0;
 }
 
-// Fuzzy transparency check — catches any magenta-ish pixel (high R, high B, low G)
+// Fuzzy transparency check — catches any green-screen pixel (high G, low R, low B)
 static inline int is_transparent(uint8_t r, uint8_t g, uint8_t b) {
-    return (r > 150 && b > 150 && g < 100);
+    return (g > 150 && r < 100 && b < 100);
 }
 
 // Draw sprite frame to front buffer
@@ -52,7 +52,7 @@ static void draw_sprite_to_front(int frame, int sx, int sy, int restore_bg) {
 
 // Called from render_screen() right after fb_flip() to prevent sprite disappearing
 void sprite_redraw_after_flip(void) {
-    if (!config.sprite_enabled) return;
+    if (!config.sprite_enabled || sprite_x < 0) return;
     draw_sprite_to_front(sprite_frame, sprite_x, sprite_y, 0);
 }
 
@@ -61,6 +61,10 @@ void *sprite_thread(void *arg) {
     struct timespec ts;
 
     if (!config.sprite_enabled) return NULL;
+
+    // Wait for first render so backbuf has valid content and position is correct
+    while (!first_render_done && running)
+        usleep(50000);
 
     get_sprite_position(&sprite_x, &sprite_y);
 

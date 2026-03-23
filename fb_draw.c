@@ -419,10 +419,22 @@ static const uint8_t font8x16[95][16] = {
     {0x00,0x00,0x76,0xDC,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00},
 };
 
+// Degree symbol (°) glyph — CP437 char 248, 8x16 bitmap
+static const uint8_t glyph_degree[16] = {
+    0x00, 0x00, 0x38, 0x44, 0x44, 0x38, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
+
 // Draw a single character at (x,y) with given color and scale
 void draw_char(Framebuffer *fb, int x, int y, char c, uint8_t r, uint8_t g, uint8_t b, int scale) {
-    if (c < 32 || c > 126) return;
-    const uint8_t *glyph = font8x16[c - 32];
+    const uint8_t *glyph;
+    if ((unsigned char)c == 0xF8) {
+        glyph = glyph_degree;
+    } else if (c < 32 || c > 126) {
+        return;
+    } else {
+        glyph = font8x16[c - 32];
+    }
 
     for (int row = 0; row < 16; row++) {
         uint8_t bits = glyph[row];

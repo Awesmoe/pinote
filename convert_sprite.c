@@ -64,9 +64,9 @@ int main(int argc, char **argv) {
     fprintf(out, "#define SPRITE_W %d\n", frame_w);
     fprintf(out, "#define SPRITE_H %d\n", frame_h);
     fprintf(out, "#define SPRITE_FRAMES %d\n", num_frames);
-    fprintf(out, "#define SPRITE_TRANSPARENT_R 255\n");
-    fprintf(out, "#define SPRITE_TRANSPARENT_G 0\n");
-    fprintf(out, "#define SPRITE_TRANSPARENT_B 255\n\n");
+    fprintf(out, "#define SPRITE_TRANSPARENT_R 0\n");
+    fprintf(out, "#define SPRITE_TRANSPARENT_G 255\n");
+    fprintf(out, "#define SPRITE_TRANSPARENT_B 0\n\n");
     fprintf(out, "/* RGB pixel data: sprite_pixels[frame][row][col][3] */\n");
     fprintf(out, "static const uint8_t sprite_pixels[%d][%d][%d][3] = {\n", num_frames, frame_h, frame_w);
 
