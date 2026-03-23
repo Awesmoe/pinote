@@ -1,6 +1,6 @@
 # PiNote
 
-A lightweight C server that turns a Raspberry Pi with an LCD into a handwritten note display and dashboard. Notes are sent from an Android app over HTTP and rendered directly to the Linux framebuffer — no X11, no browser, no desktop environment needed.
+A lightweight C server that turns a Raspberry Pi with an LCD into a handwritten note display. Notes are sent from an Android app over HTTP and rendered directly to the Linux framebuffer — no X11, no browser, no desktop environment needed.
 
 ![Built for Raspberry Pi](https://img.shields.io/badge/Raspberry%20Pi-Zero%20W%202-c51a4a?logo=raspberrypi&logoColor=white)
 ![Language](https://img.shields.io/badge/Language-C-blue)
@@ -12,7 +12,7 @@ A lightweight C server that turns a Raspberry Pi with an LCD into a handwritten 
 
 - **Direct framebuffer rendering** — writes pixels to `/dev/fb0`, no display server overhead
 - **Double-buffered** — flicker-free screen updates via back buffer + single memcpy flip
-- **Module layout system** — configurable dashboard modules (anime, chart, RSS, forecast, notes) placed via JSON config as full, half, or spanning width
+- **Module layout system** — configurable display modules (anime, chart, RSS, forecast, notes) placed via JSON config as full, half, or spanning width
 - **Data chart** — line chart with auto-scaled axes, color-coded lines, and legend. Feeds from any JSON API returning time-series data (e.g. temperature sensors)
 - **RSS feed** — displays headlines from any RSS feed (direct XML or rss2json fallback for Cloudflare-protected sites)
 - **Status bar** — IP address, WiFi signal, sensor temperatures, outside weather, last updated timestamp, and clock
@@ -123,7 +123,7 @@ Create a `pinote_config.json` in the same directory as the server:
 }
 ```
 
-All fields are optional. The server runs fine without a config file — you just won't get any dashboard data.
+All fields are optional. The server runs fine without a config file — you just won't get any info modules.
 
 ### Settings reference
 
@@ -154,7 +154,7 @@ All fields are optional. The server runs fine without a config file — you just
 
 ### Modules
 
-The `modules` array controls which dashboard modules are shown and how they're laid out. Each entry has a `type`, `width`, and optional `span`:
+The `modules` array controls which display modules are shown and how they're laid out. Each entry has a `type`, `width`, and optional `span`:
 
 | Field | Values | Description |
 |-------|--------|-------------|
