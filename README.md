@@ -210,7 +210,7 @@ The sprite renders at `SPRITE_FPS` (default 10, set in `pinote.h`) in the bottom
 
 #### Sprite gallery
 
-| Platelet (Hataraku Saibou) | Kanna (Kobayashi-san Chi no Maid Dragon) |
+| | |
 |:---:|:---:|
 | ![Platelet](sprites/platelet.gif) | ![Kanna](sprites/kanna.gif) |
 | ![Platelet sheet](sprites/platelet.jpg) | ![Kanna sheet](sprites/kanna.jpg) |
