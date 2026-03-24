@@ -206,14 +206,13 @@ The server can display an animated sprite overlay (e.g. a dancing pixel art char
 4. This creates `sprite_data.h` — rebuild the server with `make clean && make`
 5. Set `"sprite_enabled": 1` in your config
 
-The sprite renders at `SPRITE_FPS` (default 10, set in `pinote.h`) in the bottom-right corner. Transparency uses fuzzy green-screen keying (high G, low R, low B) to handle compression artifacts from video-sourced sprite sheets. CPU overhead is negligible even on a Pi Zero W 2.
+The sprite renders at `SPRITE_FPS` (default 10, set in `pinote.h`) in the bottom-right corner. Transparency uses fuzzy green-screen keying (high G, low R, low B) to handle compression artifacts from video-sourced sprite sheets. CPU overhead is negligible even on a Pi Zero W.
 
 #### Sprite gallery
 
-| | |
-|:---:|:---:|
-| ![Platelet](sprites/platelet.gif) | ![Kanna](sprites/kanna.gif) |
-| ![Platelet sheet](sprites/platelet.jpg) | ![Kanna sheet](sprites/kanna.jpg) |
+![Sprite animation](sprites/platelet.gif)
+
+![Sprite sheet](sprites/platelet.jpg)
 
 ## Display Layout
 
