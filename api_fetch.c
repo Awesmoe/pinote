@@ -245,7 +245,7 @@ static const uint8_t sensor_colors[][3] = {
 };
 
 // Find or create a sensor by name, returns index or -1 if full
-static int find_or_create_sensor(TempHistory *hist, const char *name, int namelen) {
+static int find_or_create_sensor(ChartData *hist, const char *name, int namelen) {
     for (int i = 0; i < hist->num_sensors; i++) {
         if ((int)strlen(hist->sensors[i].name) == namelen &&
             strncmp(hist->sensors[i].name, name, namelen) == 0)
@@ -263,8 +263,8 @@ static int find_or_create_sensor(TempHistory *hist, const char *name, int namele
 }
 
 // Parse flat array format:
-// [{"time":"...","sensor_name":"Outdoor","temperature_c":"13.20"}, ...]
-static void parse_temp_json(const char *json, TempHistory *hist) {
+// [{"time":"...","label":"Outdoor","value":"13.20"}, ...]
+static void parse_chart_json(const char *json, ChartData *hist) {
     hist->num_sensors = 0;
 
     const char *p = strchr(json, '[');
@@ -278,11 +278,11 @@ static void parse_temp_json(const char *json, TempHistory *hist) {
         const char *obj_end = strchr(obj, '}');
         if (!obj_end) break;
 
-        // Extract sensor_name
+        // Extract label
         char sensor_name[64] = {0};
-        const char *sn = strstr(obj, "\"sensor_name\"");
+        const char *sn = strstr(obj, "\"label\"");
         if (sn && sn < obj_end) {
-            const char *v = sn + 13;
+            const char *v = sn + 7;
             while (*v && (*v == ' ' || *v == ':' || *v == '\t')) v++;
             if (*v == '"') {
                 v++;
@@ -308,14 +308,14 @@ static void parse_temp_json(const char *json, TempHistory *hist) {
             }
         }
 
-        // Extract temperature_c (may be string or number)
-        float temperature = 0;
-        const char *tc = strstr(obj, "\"temperature_c\"");
+        // Extract value (may be string or number)
+        float value = 0;
+        const char *tc = strstr(obj, "\"value\"");
         if (tc && tc < obj_end) {
-            const char *v = tc + 15;
+            const char *v = tc + 7;
             while (*v && (*v == ' ' || *v == ':' || *v == '\t')) v++;
             if (*v == '"') v++; // skip opening quote if string value
-            sscanf(v, "%f", &temperature);
+            sscanf(v, "%f", &value);
         }
 
         // Add to the right sensor
@@ -323,9 +323,9 @@ static void parse_temp_json(const char *json, TempHistory *hist) {
             int idx = find_or_create_sensor(hist, sensor_name, strlen(sensor_name));
             if (idx >= 0) {
                 SensorData *s = &hist->sensors[idx];
-                if (s->num_points < MAX_TEMP_POINTS) {
+                if (s->num_points < MAX_CHART_POINTS) {
                     s->points[s->num_points].timestamp = timestamp;
-                    s->points[s->num_points].temperature = temperature;
+                    s->points[s->num_points].value = value;
                     s->num_points++;
                 }
             }
@@ -355,7 +355,7 @@ static void parse_temp_json(const char *json, TempHistory *hist) {
         SensorData *sd = &hist->sensors[s];
         // Simple insertion sort (data is mostly reverse-sorted)
         for (int i = 1; i < sd->num_points; i++) {
-            TempPoint tmp = sd->points[i];
+            ChartPoint tmp = sd->points[i];
             int j = i - 1;
             while (j >= 0 && sd->points[j].timestamp > tmp.timestamp) {
                 sd->points[j + 1] = sd->points[j];
@@ -368,7 +368,7 @@ static void parse_temp_json(const char *json, TempHistory *hist) {
     hist->last_fetched = time(NULL);
 }
 
-void fetch_temperature_history(void) {
+void fetch_chart_data(void) {
     if (!config.chart_api_url[0] || !config.chart_api_key[0] || config.chart_height <= 0) return;
     if (!is_shell_safe(config.chart_api_url) || !is_shell_safe(config.chart_api_key)) return;
 
@@ -380,7 +380,7 @@ void fetch_temperature_history(void) {
     static char response[131072]; // 128KB for a week of data
     if (!run_cmd(cmd, response, sizeof(response))) return;
 
-    parse_temp_json(response, &temp_history);
+    parse_chart_json(response, &chart_data);
 }
 
 // ============================================================
@@ -891,8 +891,8 @@ void refresh_status_cache(void) {
 
     if (!running) return;
 
-    // Fetch temperature history for chart
-    fetch_temperature_history();
+    // Fetch chart data
+    fetch_chart_data();
     if (!running) return;
 
     // Fetch RSS feed

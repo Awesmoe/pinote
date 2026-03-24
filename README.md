@@ -98,29 +98,32 @@ Create a `pinote_config.json` in the same directory as the server:
 
 ```json
 {
-  "latitude": 52.52,
-  "longitude": 13.405,
-  "hue_bridge_ip": "192.168.1.100",
-  "hue_api_key": "your-hue-api-key",
-  "hue_sensor_ids": ["1", "2"],
-  "anilist_media_ids": [182255, 185753],
-  "anime_truncate": 20,
+  "orientation": 1,
+  "webhook_url": "https://discord.com/api/webhooks/123123123...",
+  "hue_bridge_ip": "192.168.0.10",
+  "hue_api_key": "YOUR_HUE_API_KEY_HERE",
+  "hue_sensor_ids": ["4", "42"],
+  "anilist_media_ids": [182255, 185753, 184951, 192261],
+  "anime_truncate": 0,
   "anime_per_line": 1,
   "note_scale": 0.6,
+  "latitude": 52.52,
+  "longitude": 13.405,
+  "forecast_days": 4,
   "chart_api_url": "https://example.com/api/temperatures",
-  "chart_api_key": "your-api-key",
-  "chart_height": 200,
+  "chart_api_key": "YOUR_API_KEY_HERE",
+  "chart_height": 300,
   "refresh_interval": 1800,
-  "forecast_days": 3,
   "rss_url": "https://example.com/rss",
   "max_rss_items": 6,
   "rss_truncate": 30,
   "rss_per_line": 1,
+  "sprite_enabled": 1,
   "modules": [
     {"type": "anime", "width": "full"},
     {"type": "rss", "width": "full"},
     {"type": "chart", "width": "half"},
-    {"type": "notes", "width": "half"}
+    {"type": "notes", "width": "half", "span": 2}
   ]
 }
 ```
@@ -151,6 +154,7 @@ All fields are optional. The server runs fine without a config file — you just
 | `max_rss_items` | int | `6` | Max RSS items to display (max 20) |
 | `rss_truncate` | int | `0` | Max characters for RSS titles (0 = no truncation) |
 | `rss_per_line` | int | `1` | RSS items per row (1 or 2) |
+| `rss_wrap` | int | `0` | Wrap long RSS titles to a second line instead of truncating (0 or 1) |
 | `webhook_url` | string | — | Webhook URL for notifications (e.g. Discord webhook). Sends a POST when a tracked anime episode airs |
 | `modules` | array | see below | Module layout configuration |
 
@@ -185,12 +189,12 @@ The `chart_api_url` endpoint should return a flat JSON array of time-series read
 
 ```json
 [
-  {"time": "2024-01-15 12:00:00", "sensor_name": "Office", "temperature_c": "22.5"},
-  {"time": "2024-01-15 12:00:00", "sensor_name": "Outdoor", "temperature_c": "8.3"}
+  {"time": "2024-01-15 12:00:00", "label": "Office", "value": "22.5"},
+  {"time": "2024-01-15 12:00:00", "label": "Outdoor", "value": "8.3"}
 ]
 ```
 
-Readings are grouped by `sensor_name` and plotted as separate color-coded lines. Data should be ordered newest-first (the server sorts it). Lines are sorted alphabetically and assigned colors: cyan, yellow, red, teal, purple.
+Readings are grouped by `label` and plotted as separate color-coded lines. Data should be ordered newest-first (the server sorts it). Lines are sorted alphabetically and assigned colors: cyan, yellow, red, teal, purple.
 
 ### Sprite animation
 
@@ -203,6 +207,13 @@ The server can display an animated sprite overlay (e.g. a dancing pixel art char
 5. Set `"sprite_enabled": 1` in your config
 
 The sprite renders at `SPRITE_FPS` (default 10, set in `pinote.h`) in the bottom-right corner. Transparency uses fuzzy green-screen keying (high G, low R, low B) to handle compression artifacts from video-sourced sprite sheets. CPU overhead is negligible even on a Pi Zero W 2.
+
+#### Sprite gallery
+
+| Platelet (Hataraku Saibou) | Kanna (Kobayashi-san Chi no Maid Dragon) |
+|:---:|:---:|
+| ![Platelet](sprites/platelet.gif) | ![Kanna](sprites/kanna.gif) |
+| ![Platelet sheet](sprites/platelet.jpg) | ![Kanna sheet](sprites/kanna.jpg) |
 
 ## Display Layout
 

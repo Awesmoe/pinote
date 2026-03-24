@@ -1,10 +1,10 @@
 /*
- * chart.c - Temperature chart rendering on framebuffer
+ * chart.c - Chart rendering on framebuffer
  */
 #include "pinote.h"
 
 void draw_chart(Framebuffer *fb, int chart_x, int chart_y, int chart_w, int chart_h) {
-    if (temp_history.num_sensors == 0 || config.chart_height <= 0) return;
+    if (chart_data.num_sensors == 0 || config.chart_height <= 0) return;
 
     int fs = FONT_SCALE;           // all labels use the same scale
     int char_w = 8 * fs;           // pixel width of one character
@@ -22,15 +22,15 @@ void draw_chart(Framebuffer *fb, int chart_x, int chart_y, int chart_w, int char
 
     if (plot_w < 50 || plot_h < 30) return;
 
-    // Find min/max temperature and time across all sensors
-    float temp_min = 999, temp_max = -999;
+    // Find min/max value and time across all sensors
+    float val_min = 999, val_max = -999;
     time_t time_min = 0, time_max = 0;
 
-    for (int s = 0; s < temp_history.num_sensors; s++) {
-        SensorData *sd = &temp_history.sensors[s];
+    for (int s = 0; s < chart_data.num_sensors; s++) {
+        SensorData *sd = &chart_data.sensors[s];
         for (int i = 0; i < sd->num_points; i++) {
-            if (sd->points[i].temperature < temp_min) temp_min = sd->points[i].temperature;
-            if (sd->points[i].temperature > temp_max) temp_max = sd->points[i].temperature;
+            if (sd->points[i].value < val_min) val_min = sd->points[i].value;
+            if (sd->points[i].value > val_max) val_max = sd->points[i].value;
             if (time_min == 0 || sd->points[i].timestamp < time_min)
                 time_min = sd->points[i].timestamp;
             if (sd->points[i].timestamp > time_max)
@@ -42,15 +42,15 @@ void draw_chart(Framebuffer *fb, int chart_x, int chart_y, int chart_w, int char
     if (time_range <= 0) return;
 
     // Pick a nice Y-axis tick step aiming for ~4-6 ticks
-    int range_raw = (int)ceilf(temp_max) - (int)floorf(temp_min);
+    int range_raw = (int)ceilf(val_max) - (int)floorf(val_min);
     int tick_step;
     if (range_raw <= 8)       tick_step = 2;
     else if (range_raw <= 20) tick_step = 5;
     else                      tick_step = 10;
 
     // Align axis boundaries to tick step
-    int y_min = (int)(floorf(temp_min / tick_step) * tick_step);
-    int y_max = (int)(ceilf(temp_max / tick_step) * tick_step);
+    int y_min = (int)(floorf(val_min / tick_step) * tick_step);
+    int y_max = (int)(ceilf(val_max / tick_step) * tick_step);
     if (y_min == y_max) { y_min -= tick_step; y_max += tick_step; }
     float axis_min = (float)y_min;
     float axis_max = (float)y_max;
@@ -150,15 +150,15 @@ void draw_chart(Framebuffer *fb, int chart_x, int chart_y, int chart_w, int char
     }
 
     // Data lines for each sensor
-    for (int s = 0; s < temp_history.num_sensors; s++) {
-        SensorData *sd = &temp_history.sensors[s];
+    for (int s = 0; s < chart_data.num_sensors; s++) {
+        SensorData *sd = &chart_data.sensors[s];
         if (sd->num_points < 2) continue;
 
         int prev_px = -1, prev_py = -1;
         for (int i = 0; i < sd->num_points; i++) {
             double t_off = difftime(sd->points[i].timestamp, time_min);
             int px = plot_x + (int)(t_off / time_range * plot_w);
-            int py = plot_y + plot_h - (int)((sd->points[i].temperature - axis_min)
+            int py = plot_y + plot_h - (int)((sd->points[i].value - axis_min)
                                               / axis_range * plot_h);
 
             // Clamp to plot area
@@ -178,8 +178,8 @@ void draw_chart(Framebuffer *fb, int chart_x, int chart_y, int chart_w, int char
     // Legend below X labels (sensors are alphabetically sorted, colors consistent everywhere)
     int legend_y = xlabel_y + char_h + 6;
     int legend_x = plot_x;
-    for (int s = 0; s < temp_history.num_sensors; s++) {
-        SensorData *sd = &temp_history.sensors[s];
+    for (int s = 0; s < chart_data.num_sensors; s++) {
+        SensorData *sd = &chart_data.sensors[s];
         fill_rect(fb, legend_x, legend_y + 4, 12, 12, sd->r, sd->g, sd->b);
         legend_x += 16;
         legend_x = draw_text(fb, legend_x, legend_y, sd->name, sd->r, sd->g, sd->b, fs);

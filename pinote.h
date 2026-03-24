@@ -37,9 +37,9 @@
 #define CONFIG_PATH "pinote_config.json"
 #define CACHE_TTL 900  // 15 minutes
 
-// Temperature chart settings
+// Chart settings
 #define MAX_SENSORS 5
-#define MAX_TEMP_POINTS 250   // ~10 days of hourly data
+#define MAX_CHART_POINTS 250   // ~10 days of hourly data
 #define DEFAULT_CHART_HEIGHT 200
 
 // Orientation constants (set via "orientation" in pinote_config.json)
@@ -149,6 +149,7 @@ typedef struct {
     int max_rss_items;       // max items to display (default 6)
     int rss_truncate;        // max characters for RSS titles (0 = no truncation)
     int rss_per_line;        // RSS items per row (1 or 2, default 1)
+    int rss_wrap;            // wrap long titles to second line (0 or 1, default 0)
     int sprite_enabled;      // 1 = show animated sprite, 0 = off (default 0)
     int orientation;         // 1=landscape, 2=portrait, 3=landscape_flip, 4=portrait_flip
     char webhook_url[256];   // Discord/Slack/generic webhook for notifications
@@ -170,15 +171,15 @@ typedef struct {
     time_t last_fetched;
 } StatusCache;
 
-// Temperature chart data structures
+// Chart data structures
 typedef struct {
     time_t timestamp;
-    float temperature;
-} TempPoint;
+    float value;
+} ChartPoint;
 
 typedef struct {
     char name[64];
-    TempPoint points[MAX_TEMP_POINTS];
+    ChartPoint points[MAX_CHART_POINTS];
     int num_points;
     uint8_t r, g, b;
 } SensorData;
@@ -187,7 +188,7 @@ typedef struct {
     SensorData sensors[MAX_SENSORS];
     int num_sensors;
     time_t last_fetched;
-} TempHistory;
+} ChartData;
 
 // RSS feed data structures
 typedef struct {
@@ -235,7 +236,7 @@ extern StatusCache status_cache;
 extern volatile int running;
 extern volatile int first_render_done;
 extern int server_socket;
-extern TempHistory temp_history;
+extern ChartData chart_data;
 extern RssCache rss_cache;
 extern ForecastCache forecast_cache;
 
@@ -316,7 +317,7 @@ void load_config(const char *path, AppConfig *cfg);
 // ============================================================
 
 int  run_cmd(const char *cmd, char *buf, int bufsize);
-void fetch_temperature_history(void);
+void fetch_chart_data(void);
 void fetch_rss_feed(void);
 void refresh_status_cache(void);
 

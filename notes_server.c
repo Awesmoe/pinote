@@ -16,7 +16,7 @@ StatusCache status_cache = {0};
 volatile int running = 1;
 volatile int first_render_done = 0;
 int server_socket = -1;
-TempHistory temp_history = {0};
+ChartData chart_data = {0};
 
 // Signal handler
 static void handle_signal(int sig) {
@@ -153,8 +153,8 @@ void draw_status_bar(Framebuffer *fb, int width) {
     section_x += 30;
 
     // Temperatures in alphabetical order (matching chart legend)
-    for (int s = 0; s < temp_history.num_sensors; s++) {
-        SensorData *sd = &temp_history.sensors[s];
+    for (int s = 0; s < chart_data.num_sensors; s++) {
+        SensorData *sd = &chart_data.sensors[s];
         const char *val = NULL;
 
         if (strcmp(sd->name, "Outdoor") == 0) {
@@ -394,7 +394,7 @@ void draw_notes_area(Framebuffer *fb, int x, int y, int w, int h) {
 static int get_module_height(int type) {
     switch (type) {
         case MODULE_CHART:
-            if (config.chart_height <= 0 || temp_history.num_sensors == 0) return 0;
+            if (config.chart_height <= 0 || chart_data.num_sensors == 0) return 0;
             return config.chart_height;
         case MODULE_ANIME:
             return get_anime_height();
@@ -503,6 +503,7 @@ void render_screen(void) {
             // Full-width module
             int h = get_module_height(m->type);
             if (h == MODULE_HEIGHT_FILL) h = display_height - y;
+            if (y + h > display_height) h = display_height - y;
             if (h <= 0) continue;
             draw_module(&fb, m->type, 0, y, display_width, h);
             y += h;
@@ -546,6 +547,7 @@ void render_screen(void) {
             else
                 total_h = display_height - y;
 
+            if (y + total_h > display_height) total_h = display_height - y;
             if (total_h <= 0) {
                 for (int s = 0; s < pc; s++) drawn[partners[i][s]] = 1;
                 continue;
@@ -585,6 +587,7 @@ void render_screen(void) {
             // Unpaired half-width: render on left side only
             int h = get_module_height(m->type);
             if (h == MODULE_HEIGHT_FILL) h = display_height - y;
+            if (y + h > display_height) h = display_height - y;
             if (h <= 0) continue;
             draw_module(&fb, m->type, 0, y, display_width / 2, h);
             y += h;

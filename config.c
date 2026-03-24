@@ -134,6 +134,7 @@ void load_config(const char *path, AppConfig *cfg) {
     if (cfg->rss_per_line < 1) cfg->rss_per_line = 1;
     if (cfg->rss_per_line > 2) cfg->rss_per_line = 2;
     json_get_int(buf, "rss_truncate", &cfg->rss_truncate);
+    json_get_int(buf, "rss_wrap", &cfg->rss_wrap);
 
     // Parse sprite toggle (default: off)
     json_get_int(buf, "sprite_enabled", &cfg->sprite_enabled);
