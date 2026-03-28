@@ -390,8 +390,8 @@ void draw_notes_area(Framebuffer *fb, int x, int y, int w, int h) {
 // Layout manager
 // ============================================================
 
-// Get the height a module needs
-static int get_module_height(int type) {
+// Get the height a module needs (w = anticipated render width)
+static int get_module_height(int type, int w) {
     switch (type) {
         case MODULE_CHART:
             if (config.chart_height <= 0 || chart_data.num_sensors == 0) return 0;
@@ -401,7 +401,7 @@ static int get_module_height(int type) {
         case MODULE_NOTES:
             return MODULE_HEIGHT_FILL;
         case MODULE_RSS:
-            return get_rss_height();
+            return get_rss_height(w);
         case MODULE_FORECAST:
             return get_forecast_height();
         default:
@@ -501,7 +501,7 @@ void render_screen(void) {
 
         if (m->width == MODULE_WIDTH_FULL) {
             // Full-width module
-            int h = get_module_height(m->type);
+            int h = get_module_height(m->type, display_width);
             if (h == MODULE_HEIGHT_FILL) h = display_height - y;
             if (y + h > display_height) h = display_height - y;
             if (h <= 0) continue;
@@ -526,12 +526,12 @@ void render_screen(void) {
             int stack_w = leader_right ? half_w : (display_width - half_w);
 
             // Calculate stacked-side heights
-            int span_h_raw = get_module_height(m->type);
+            int span_h_raw = get_module_height(m->type, span_w);
             int sh_raw[4], sh[4];
             int stack_fixed_total = 0;
             int stack_fill_count = 0;
             for (int s = 0; s < pc; s++) {
-                sh_raw[s] = get_module_height(config.modules[partners[i][s]].type);
+                sh_raw[s] = get_module_height(config.modules[partners[i][s]].type, stack_w);
                 if (sh_raw[s] == MODULE_HEIGHT_FILL)
                     stack_fill_count++;
                 else
@@ -585,7 +585,7 @@ void render_screen(void) {
 
         } else {
             // Unpaired half-width: render on left side only
-            int h = get_module_height(m->type);
+            int h = get_module_height(m->type, display_width / 2);
             if (h == MODULE_HEIGHT_FILL) h = display_height - y;
             if (y + h > display_height) h = display_height - y;
             if (h <= 0) continue;
@@ -604,8 +604,18 @@ void render_screen(void) {
 // Status bar refresh thread
 // ============================================================
 
+static int network_ready(void) {
+    char buf[64];
+    // Quick DNS check — if this resolves, the network is up
+    return run_cmd("getent hosts api.open-meteo.com 2>/dev/null", buf, sizeof(buf));
+}
+
 static void *status_refresh_thread(void *arg) {
     (void)arg;
+    // On boot, the service may start before the network is up.
+    // Wait here so the first refresh doesn't fire into a dead network
+    // and then lock out retries for the full refresh_interval.
+    while (running && !network_ready()) sleep(5);
     while (running) {
         time_t now = time(NULL);
         if (now - status_cache.last_fetched >= config.refresh_interval) {

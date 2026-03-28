@@ -465,8 +465,9 @@ static void parse_one_anime(const char **pos, const char *end, AnimeInfo *info) 
     }
 }
 
-static void fetch_all_anime(const int *media_ids, int count, AnimeInfo *out) {
-    if (count <= 0) return;
+// Returns 1 on success, 0 on failure (out[] left untouched on failure)
+static int fetch_all_anime(const int *media_ids, int count, AnimeInfo *out) {
+    if (count <= 0) return 0;
 
     char query[4096];
     int pos = 0;
@@ -485,13 +486,8 @@ static void fetch_all_anime(const int *media_ids, int count, AnimeInfo *out) {
         "-d '{\"query\":\"%s\"}' 2>/dev/null", query);
 
     char response[32768];
-    if (!run_cmd(cmd, response, sizeof(response))) {
-        for (int i = 0; i < count; i++) {
-            memset(&out[i], 0, sizeof(AnimeInfo));
-            snprintf(out[i].countdown, sizeof(out[i].countdown), "TBA");
-        }
-        return;
-    }
+    if (!run_cmd(cmd, response, sizeof(response)))
+        return 0;
 
     const char *resp_end = response + strlen(response);
     for (int i = 0; i < count; i++) {
@@ -513,6 +509,7 @@ static void fetch_all_anime(const int *media_ids, int count, AnimeInfo *out) {
             snprintf(out[i].countdown, sizeof(out[i].countdown), "TBA");
         }
     }
+    return 1;
 }
 
 static int anime_sort_cmp(const void *a, const void *b) {
@@ -800,7 +797,7 @@ static void send_webhook(const char *url, const char *message) {
     char cmd[1024];
     snprintf(cmd, sizeof(cmd),
         "curl -s -X POST '%s' -H 'Content-Type: application/json' "
-        "-d '{\"content\":\"%s\"}' 2>/dev/null",
+        "-d '{\"username\":\"Pinote\",\"content\":\"%s\"}' 2>/dev/null",
         url, safe_msg);
 
     char resp[256];
@@ -820,73 +817,73 @@ void refresh_status_cache(void) {
     fetch_weather();
     if (!running) return;
 
-    // Fetch all anime in one API call
+    // Fetch all anime in one API call (keep previous cache on failure)
     AnimeInfo anime[MAX_ANIME];
     int anime_count = config.num_anime;
-    fetch_all_anime(config.anilist_media_ids, anime_count, anime);
-
-    // Notify via webhook if any anime just aired since last refresh
-    // Must happen BEFORE qsort — indices match config order (stable between refreshes)
     static long prev_airing_at[MAX_ANIME] = {0};
     static char prev_countdown[MAX_ANIME][64] = {{0}};
     static int prev_initialized = 0;
 
-    if (config.webhook_url[0] && prev_initialized) {
-        time_t now = time(NULL);
-        for (int i = 0; i < anime_count; i++) {
-            if (prev_airing_at[i] <= 0) continue;
-            // Case 1: we passed the old airing time AND API advanced to next episode
-            // Case 2: we passed the old airing time AND no next episode (final)
-            int aired = ((long)now >= prev_airing_at[i] && anime[i].airing_at > prev_airing_at[i])
-                     || ((long)now >= prev_airing_at[i] && anime[i].airing_at <= 0);
-            if (aired) {
-                char title[128];
-                strncpy(title, anime[i].title, sizeof(title) - 1);
-                title[sizeof(title) - 1] = '\0';
-                truncate_with_dots(title, 60);
-                char msg[256];
-                // Use prev_countdown for episode number — current one already advanced
-                const char *ep = strstr(prev_countdown[i], "Ep");
-                if (anime[i].airing_at <= 0)
-                    snprintf(msg, sizeof(msg), ep ? "%s %s just aired! (final)" : "%s just aired! (final)",
-                             title, ep);
-                else
-                    snprintf(msg, sizeof(msg), ep ? "%s %s just aired!" : "%s just aired!",
-                             title, ep);
-                send_webhook(config.webhook_url, msg);
+    if (fetch_all_anime(config.anilist_media_ids, anime_count, anime)) {
+        // Notify via webhook if any anime just aired since last refresh
+        // Must happen BEFORE qsort — indices match config order (stable between refreshes)
+        if (config.webhook_url[0] && prev_initialized) {
+            time_t now = time(NULL);
+            for (int i = 0; i < anime_count; i++) {
+                if (prev_airing_at[i] <= 0) continue;
+                // Case 1: we passed the old airing time AND API advanced to next episode
+                // Case 2: we passed the old airing time AND no next episode (final)
+                int aired = ((long)now >= prev_airing_at[i] && anime[i].airing_at > prev_airing_at[i])
+                         || ((long)now >= prev_airing_at[i] && anime[i].airing_at <= 0);
+                if (aired) {
+                    char title[128];
+                    strncpy(title, anime[i].title, sizeof(title) - 1);
+                    title[sizeof(title) - 1] = '\0';
+                    truncate_with_dots(title, 60);
+                    char msg[256];
+                    // Use prev_countdown for episode number — current one already advanced
+                    const char *ep = strstr(prev_countdown[i], "Ep");
+                    if (anime[i].airing_at <= 0)
+                        snprintf(msg, sizeof(msg), ep ? "%s %s just aired! (final)" : "%s just aired! (final)",
+                                 title, ep);
+                    else
+                        snprintf(msg, sizeof(msg), ep ? "%s %s just aired!" : "%s just aired!",
+                                 title, ep);
+                    send_webhook(config.webhook_url, msg);
+                }
             }
         }
-    }
 
-    // Save current state for next comparison
-    for (int i = 0; i < anime_count; i++) {
-        prev_airing_at[i] = anime[i].airing_at;
-        strncpy(prev_countdown[i], anime[i].countdown, sizeof(prev_countdown[i]) - 1);
-        prev_countdown[i][sizeof(prev_countdown[i]) - 1] = '\0';
-    }
-    prev_initialized = 1;
+        // Save current state for next comparison
+        for (int i = 0; i < anime_count; i++) {
+            prev_airing_at[i] = anime[i].airing_at;
+            strncpy(prev_countdown[i], anime[i].countdown, sizeof(prev_countdown[i]) - 1);
+            prev_countdown[i][sizeof(prev_countdown[i]) - 1] = '\0';
+        }
+        prev_initialized = 1;
 
-    // Sort by airing time (soonest first, TBA last)
-    qsort(anime, anime_count, sizeof(AnimeInfo), anime_sort_cmp);
+        // Sort by airing time (soonest first, TBA last)
+        qsort(anime, anime_count, sizeof(AnimeInfo), anime_sort_cmp);
 
-    // Build individual anime title + countdown strings (separate for dual-color rendering)
-    status_cache.num_anime_entries = 0;
-    for (int i = 0; i < anime_count && i < MAX_ANIME; i++) {
-        // Skip finished anime or ones with no upcoming episode
-        if (anime[i].finished || anime[i].airing_at == 0) continue;
+        // Build individual anime title + countdown strings (separate for dual-color rendering)
+        status_cache.num_anime_entries = 0;
+        for (int i = 0; i < anime_count && i < MAX_ANIME; i++) {
+            // Skip finished anime or ones with no upcoming episode
+            if (anime[i].finished || anime[i].airing_at == 0) continue;
 
-        char *title = anime[i].title;
+            char *title = anime[i].title;
 
-        // Clean up title: strip accents, truncate if configured
-        strip_utf8_accents(title);
-        if (config.anime_truncate > 0)
-            truncate_with_dots(title, config.anime_truncate);
+            // Clean up title: strip accents, truncate if configured
+            strip_utf8_accents(title);
+            if (config.anime_truncate > 0)
+                truncate_with_dots(title, config.anime_truncate);
 
-        int idx = status_cache.num_anime_entries;
-        snprintf(status_cache.anime_titles[idx], 128, "%s", title[0] ? title : "?");
-        snprintf(status_cache.anime_countdowns[idx], 64, "%s", anime[i].countdown);
-        status_cache.anime_airing_at[idx] = anime[i].airing_at;
-        status_cache.num_anime_entries++;
+            int idx = status_cache.num_anime_entries;
+            snprintf(status_cache.anime_titles[idx], 128, "%s", title[0] ? title : "?");
+            snprintf(status_cache.anime_countdowns[idx], 64, "%s", anime[i].countdown);
+            status_cache.anime_airing_at[idx] = anime[i].airing_at;
+            status_cache.num_anime_entries++;
+        }
     }
 
     if (!running) return;

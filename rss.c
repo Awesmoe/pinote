@@ -22,31 +22,36 @@ static int item_rows(int item_idx, int max_title_chars) {
     return (title_len > max_title_chars) ? 2 : 1;
 }
 
-int get_rss_height(void) {
+// Max row height for a group of per_line items starting at index i
+static int rss_row_height(int i, int per_line, int count, int max_title_chars) {
+    int row_h = 1;
+    if (config.rss_wrap) {
+        for (int j = 0; j < per_line && i + j < count; j++) {
+            int h = item_rows(i + j, max_title_chars);
+            if (h > row_h) row_h = h;
+        }
+    }
+    return row_h;
+}
+
+// Compute max_title_chars from available pixel width
+static int rss_max_title_chars(int w, int per_line) {
+    int char_w = 8 * FONT_SCALE;
+    int avail_w = (per_line >= 2) ? w / 2 - 10 : w - 20;
+    int mtc = (avail_w / char_w) - 8;
+    return mtc < 3 ? 3 : mtc;
+}
+
+int get_rss_height(int w) {
     if (rss_cache.num_items == 0) return 0;
     int max_items = config.max_rss_items > 0 ? config.max_rss_items : 6;
     int count = rss_cache.num_items < max_items ? rss_cache.num_items : max_items;
     int per_line = config.rss_per_line <= 0 ? 1 : config.rss_per_line;
-
-    int display_w, display_h;
-    get_display_size(&fb, &display_w, &display_h);
-    int fs = FONT_SCALE;
-    int char_w = 8 * fs;
-    int avail_w = (per_line >= 2) ? (display_w / 2 - 10) : (display_w - 20);
-    int max_title_chars = (avail_w / char_w) - 8;
-    if (max_title_chars < 3) max_title_chars = 3;
+    int max_title_chars = rss_max_title_chars(w, per_line);
 
     int rows = 0;
-    for (int i = 0; i < count; i += per_line) {
-        int row_h = 1;
-        if (config.rss_wrap) {
-            for (int j = 0; j < per_line && i + j < count; j++) {
-                int h = item_rows(i + j, max_title_chars);
-                if (h > row_h) row_h = h;
-            }
-        }
-        rows += row_h;
-    }
+    for (int i = 0; i < count; i += per_line)
+        rows += rss_row_height(i, per_line, count, max_title_chars);
     return rows * STATUS_ROW_HEIGHT;
 }
 
@@ -124,24 +129,11 @@ void draw_rss(Framebuffer *fb, int x, int y, int w, int h) {
     int fs = FONT_SCALE;
     int char_w = 8 * fs;
     int char_h = 16 * fs;
-
-    // Calculate max title chars based on available width
-    int avail_w = (per_line >= 2) ? w / 2 - 10 : w - 20;
-    // Reserve space for date ("Mar 13") + "  " = ~8 chars
-    int max_title_chars = (avail_w / char_w) - 8;
-    if (max_title_chars < 3) max_title_chars = 3;
+    int max_title_chars = rss_max_title_chars(w, per_line);
 
     int cur_y = y;
     for (int i = 0; i < count; i += per_line) {
-        // Determine row height (max of items in this row)
-        int row_h = 1;
-        if (config.rss_wrap) {
-            for (int j = 0; j < per_line && i + j < count; j++) {
-                int h2 = item_rows(i + j, max_title_chars);
-                if (h2 > row_h) row_h = h2;
-            }
-        }
-        int row_px = row_h * line_height;
+        int row_px = rss_row_height(i, per_line, count, max_title_chars) * line_height;
 
         if (cur_y + row_px > y + h) break;
 

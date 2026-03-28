@@ -33,7 +33,7 @@
 #define BUFFER_SIZE 131072  // 128KB
 #define STATUS_ROW_HEIGHT 40
 #define FONT_SCALE 2
-#define MAX_ANIME 10
+#define MAX_ANIME 32
 #define CONFIG_PATH "pinote_config.json"
 #define CACHE_TTL 900  // 15 minutes
 
@@ -264,12 +264,22 @@ static const char latin_accent_map[64] =
 
 static inline void strip_utf8_accents(char *str) {
     unsigned char *s = (unsigned char *)str;
-    char *out = str;
-    while (*s) {
+    char tmp[256];
+    char *out = tmp;
+    char *end = tmp + sizeof(tmp) - 1;
+    while (*s && out < end) {
         if (s[0] == 0xC3 && s[1] >= 0x80 && s[1] <= 0xBF) {
             // 2-byte UTF-8: U+00C0..U+00FF → mapped ASCII
             *out++ = latin_accent_map[s[1] - 0x80];
             s += 2;
+        } else if (s[0] == 0xC2 && s[1] == 0xB7) {
+            // U+00B7 middle dot · → " - "
+            if (out + 3 <= end) { *out++ = ' '; *out++ = '-'; *out++ = ' '; }
+            s += 2;
+        } else if (s[0] == 0xE2 && s[1] == 0x80 && (s[2] == 0x93 || s[2] == 0x94)) {
+            // U+2013 en dash / U+2014 em dash → " - "
+            if (out + 3 <= end) { *out++ = ' '; *out++ = '-'; *out++ = ' '; }
+            s += 3;
         } else if ((s[0] & 0xE0) == 0xC0 && (s[1] & 0xC0) == 0x80) {
             // Other 2-byte UTF-8: replace with '?'
             *out++ = '?';
@@ -287,6 +297,7 @@ static inline void strip_utf8_accents(char *str) {
         }
     }
     *out = '\0';
+    strcpy(str, tmp);
 }
 
 // ============================================================
@@ -332,7 +343,7 @@ void draw_chart(Framebuffer *fb, int chart_x, int chart_y, int chart_w, int char
 // ============================================================
 
 void draw_rss(Framebuffer *fb, int x, int y, int w, int h);
-int  get_rss_height(void);
+int  get_rss_height(int w);
 
 // ============================================================
 // forecast.c
