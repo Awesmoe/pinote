@@ -123,8 +123,36 @@ void load_config(const char *path, AppConfig *cfg) {
     json_get_int(buf, "refresh_interval", &cfg->refresh_interval);
     if (cfg->refresh_interval < 300) cfg->refresh_interval = 300; // minimum 5 minutes
 
-    // Parse RSS feed settings
-    json_get_string(buf, "rss_url", cfg->rss_url, sizeof(cfg->rss_url));
+    // Parse RSS feed settings (rss_url accepts a string or array of strings)
+    {
+        const char *rss_key = strstr(buf, "\"rss_url\"");
+        if (rss_key) {
+            const char *p = rss_key + 9;
+            while (*p && (*p == ' ' || *p == ':' || *p == '\t')) p++;
+            if (*p == '[') {
+                // Array of URLs
+                p++;
+                while (*p && *p != ']' && cfg->num_rss_urls < 10) {
+                    while (*p && (*p == ' ' || *p == ',' || *p == '\n' || *p == '\r' || *p == '\t')) p++;
+                    if (*p == '"') {
+                        p++;
+                        int i = 0;
+                        while (*p && *p != '"' && i < 255) cfg->rss_urls[cfg->num_rss_urls][i++] = *p++;
+                        cfg->rss_urls[cfg->num_rss_urls][i] = '\0';
+                        cfg->num_rss_urls++;
+                        if (*p == '"') p++;
+                    } else break;
+                }
+            } else {
+                // Single string
+                char url[256] = {0};
+                if (json_get_string(buf, "rss_url", url, sizeof(url)) && url[0]) {
+                    snprintf(cfg->rss_urls[0], sizeof(cfg->rss_urls[0]), "%s", url);
+                    cfg->num_rss_urls = 1;
+                }
+            }
+        }
+    }
     cfg->max_rss_items = 6;
     json_get_int(buf, "max_rss_items", &cfg->max_rss_items);
     if (cfg->max_rss_items < 0) cfg->max_rss_items = 0;

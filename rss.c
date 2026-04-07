@@ -52,7 +52,10 @@ int get_rss_height(int w) {
     int rows = 0;
     for (int i = 0; i < count; i += per_line)
         rows += rss_row_height(i, per_line, count, max_title_chars);
-    return rows * STATUS_ROW_HEIGHT;
+    int height = rows * STATUS_ROW_HEIGHT;
+    // Add label row when cycling multiple feeds
+    if (rss_cache.label[0]) height += STATUS_ROW_HEIGHT;
+    return height;
 }
 
 // Draw a single RSS item (date in accent color, title in light gray)
@@ -132,6 +135,23 @@ void draw_rss(Framebuffer *fb, int x, int y, int w, int h) {
     int max_title_chars = rss_max_title_chars(w, per_line);
 
     int cur_y = y;
+
+    // Label row when cycling multiple feeds
+    if (rss_cache.label[0]) {
+        fill_rect(fb, x, cur_y, w, 1, SEP_MINOR_R, SEP_MINOR_G, SEP_MINOR_B);
+        int text_y = cur_y + (line_height - char_h) / 2;
+        int tx = draw_text(fb, x + 10, text_y, "RSS", 100, 200, 255, fs);
+        tx = draw_text(fb, tx, text_y, " - ", 90, 90, 100, fs);
+        draw_text(fb, tx, text_y, rss_cache.label, 90, 90, 100, fs);
+        // "next: domain" right-aligned
+        if (rss_cache.next_label[0]) {
+            int next_len = (6 + strlen(rss_cache.next_label)) * char_w; // "next: " + label
+            draw_text(fb, x + w - next_len - 10, text_y, "next: ", 90, 90, 100, fs);
+            draw_text(fb, x + w - (int)strlen(rss_cache.next_label) * char_w - 10, text_y,
+                      rss_cache.next_label, 90, 90, 100, fs);
+        }
+        cur_y += line_height;
+    }
     for (int i = 0; i < count; i += per_line) {
         int row_px = rss_row_height(i, per_line, count, max_title_chars) * line_height;
 

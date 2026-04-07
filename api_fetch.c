@@ -41,9 +41,10 @@ static void get_hue_temperatures(const AppConfig *cfg, StatusCache *cache) {
         return;
 
     for (int s = 0; s < cfg->num_hue_sensors && s < 10; s++) {
+        if (!is_shell_safe(cfg->hue_sensor_ids[s])) continue;
         char cmd[512];
         snprintf(cmd, sizeof(cmd),
-            "curl -s --connect-timeout 2 'http://%s/api/%s/sensors/%s' 2>/dev/null",
+            "curl -s --max-time 10 --connect-timeout 2 'http://%s/api/%s/sensors/%s' 2>/dev/null",
             cfg->hue_bridge_ip, cfg->hue_api_key, cfg->hue_sensor_ids[s]);
 
         char response[4096];
@@ -132,14 +133,14 @@ static int json_array_int(const char *arr, int idx, int *out) {
 
 static const char *day_names[] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
 
-static void fetch_weather(void) {
+static void fetch_weather(StatusCache *sc, ForecastCache *fc) {
     if (!config.has_location) return;
 
     // Build URL — always fetch current temp, optionally add daily forecast
     char cmd[512];
     if (config.forecast_days > 0) {
         snprintf(cmd, sizeof(cmd),
-            "curl -s --connect-timeout 5 'https://api.open-meteo.com/v1/forecast?"
+            "curl -s --max-time 15 --connect-timeout 5 'https://api.open-meteo.com/v1/forecast?"
             "latitude=%.4f&longitude=%.4f"
             "&current=temperature_2m"
             "&daily=weather_code,temperature_2m_max,temperature_2m_min,wind_speed_10m_max,uv_index_max,precipitation_sum"
@@ -147,7 +148,7 @@ static void fetch_weather(void) {
             config.latitude, config.longitude, config.forecast_days);
     } else {
         snprintf(cmd, sizeof(cmd),
-            "curl -s --connect-timeout 3 'https://api.open-meteo.com/v1/forecast?"
+            "curl -s --max-time 15 --connect-timeout 3 'https://api.open-meteo.com/v1/forecast?"
             "latitude=%.4f&longitude=%.4f&current=temperature_2m' 2>/dev/null",
             config.latitude, config.longitude);
     }
@@ -155,18 +156,18 @@ static void fetch_weather(void) {
     char response[8192];
     if (!run_cmd(cmd, response, sizeof(response))) return;
 
-    // Parse current temperature → status_cache.weather_temp (keep old value on failure)
+    // Parse current temperature (keep old value on failure)
     const char *current = strstr(response, "\"current\":{");
     if (current) {
         const char *temp = strstr(current, "\"temperature_2m\":");
         if (temp) {
             float val = 0;
             if (sscanf(temp + strlen("\"temperature_2m\":"), "%f", &val) == 1)
-                snprintf(status_cache.weather_temp, sizeof(status_cache.weather_temp), "%.1fC", val);
+                snprintf(sc->weather_temp, sizeof(sc->weather_temp), "%.1fC", val);
         }
     }
 
-    // Parse daily forecast → forecast_cache
+    // Parse daily forecast
     if (config.forecast_days <= 0) return;
 
     const char *daily = strstr(response, "\"daily\":{");
@@ -188,7 +189,7 @@ static void fetch_weather(void) {
         char date_str[16] = {0};
         if (!json_array_string(time_arr, i, date_str, sizeof(date_str))) break;
 
-        ForecastDay *day = &forecast_cache.days[count];
+        ForecastDay *day = &fc->days[count];
         memset(day, 0, sizeof(ForecastDay));
 
         // Derive day name from "YYYY-MM-DD"
@@ -212,8 +213,8 @@ static void fetch_weather(void) {
         count++;
     }
 
-    forecast_cache.num_days = count;
-    forecast_cache.last_fetched = time(NULL);
+    fc->num_days = count;
+    fc->last_fetched = time(NULL);
 }
 
 // ============================================================
@@ -262,6 +263,9 @@ static int find_or_create_sensor(ChartData *hist, const char *name, int namelen)
     return idx;
 }
 
+// Find the matching closing brace for a JSON object, ignoring braces inside strings.
+static const char *json_find_object_end(const char *obj);
+
 // Parse flat array format:
 // [{"time":"...","label":"Outdoor","value":"13.20"}, ...]
 static void parse_chart_json(const char *json, ChartData *hist) {
@@ -275,7 +279,7 @@ static void parse_chart_json(const char *json, ChartData *hist) {
         // Find next object
         const char *obj = strchr(p, '{');
         if (!obj) break;
-        const char *obj_end = strchr(obj, '}');
+        const char *obj_end = json_find_object_end(obj);
         if (!obj_end) break;
 
         // Extract label
@@ -368,19 +372,19 @@ static void parse_chart_json(const char *json, ChartData *hist) {
     hist->last_fetched = time(NULL);
 }
 
-void fetch_chart_data(void) {
+void fetch_chart_data(ChartData *cd) {
     if (!config.chart_api_url[0] || !config.chart_api_key[0] || config.chart_height <= 0) return;
     if (!is_shell_safe(config.chart_api_url) || !is_shell_safe(config.chart_api_key)) return;
 
     char cmd[512];
     snprintf(cmd, sizeof(cmd),
-        "curl -s --connect-timeout 10 -H 'X-API-Key: %s' '%s' 2>/dev/null",
+        "curl -s --max-time 30 --connect-timeout 10 -H 'X-API-Key: %s' '%s' 2>/dev/null",
         config.chart_api_key, config.chart_api_url);
 
     static char response[131072]; // 128KB for a week of data
     if (!run_cmd(cmd, response, sizeof(response))) return;
 
-    parse_chart_json(response, &chart_data);
+    parse_chart_json(response, cd);
 }
 
 // ============================================================
@@ -481,13 +485,18 @@ static int fetch_all_anime(const int *media_ids, int count, AnimeInfo *out) {
 
     char cmd[8192];
     snprintf(cmd, sizeof(cmd),
-        "curl -s --connect-timeout 10 -X POST 'https://graphql.anilist.co' "
+        "curl -s --max-time 30 --connect-timeout 10 -X POST 'https://graphql.anilist.co' "
         "-H 'Content-Type: application/json' "
         "-d '{\"query\":\"%s\"}' 2>/dev/null", query);
 
     char response[32768];
     if (!run_cmd(cmd, response, sizeof(response)))
         return 0;
+
+    // AniList error response (rate limit, server error, etc.) — keep previous cache
+    if (strstr(response, "\"errors\"") || !strstr(response, "\"data\"")) {
+        return 0;
+    }
 
     const char *resp_end = response + strlen(response);
     for (int i = 0; i < count; i++) {
@@ -617,7 +626,7 @@ static int parse_rss_xml(const char *response, RssCache *tmp) {
         char title_raw[256] = {0};
         if (xml_get_text(item_start, item_end, "title", title_raw, sizeof(title_raw)))
             decode_html_entities(title_raw, item->title, sizeof(item->title));
-        strip_utf8_accents(item->title);
+        strip_utf8_accents(item->title, sizeof(item->title));
 
         char pubdate[64] = {0};
         if (xml_get_text(item_start, item_end, "pubDate", pubdate, sizeof(pubdate)))
@@ -680,6 +689,37 @@ static int rss_json_get_string(const char *json, const char *end, const char *ke
     return i;
 }
 
+// Find the matching closing brace for a JSON object, ignoring braces inside strings.
+static const char *json_find_object_end(const char *obj) {
+    int depth = 0;
+    int in_string = 0;
+    int escaped = 0;
+
+    for (const char *p = obj; *p; p++) {
+        if (in_string) {
+            if (escaped) {
+                escaped = 0;
+            } else if (*p == '\\') {
+                escaped = 1;
+            } else if (*p == '"') {
+                in_string = 0;
+            }
+            continue;
+        }
+
+        if (*p == '"') {
+            in_string = 1;
+        } else if (*p == '{') {
+            depth++;
+        } else if (*p == '}') {
+            depth--;
+            if (depth == 0) return p;
+        }
+    }
+
+    return NULL;
+}
+
 // Parse rss2json JSON response into tmp cache. Returns number of items parsed.
 static int parse_rss_json(const char *response, RssCache *tmp) {
     const char *items = strstr(response, "\"items\"");
@@ -691,7 +731,7 @@ static int parse_rss_json(const char *response, RssCache *tmp) {
     while (tmp->num_items < MAX_RSS_ITEMS) {
         const char *obj = strchr(p, '{');
         if (!obj) break;
-        const char *obj_end = strchr(obj, '}');
+        const char *obj_end = json_find_object_end(obj);
         if (!obj_end) break;
 
         RssItem *item = &tmp->items[tmp->num_items];
@@ -699,7 +739,7 @@ static int parse_rss_json(const char *response, RssCache *tmp) {
         char title_raw[256] = {0};
         rss_json_get_string(obj, obj_end, "title", title_raw, sizeof(title_raw));
         decode_html_entities(title_raw, item->title, sizeof(item->title));
-        strip_utf8_accents(item->title);
+        strip_utf8_accents(item->title, sizeof(item->title));
 
         char pubdate[64] = {0};
         if (rss_json_get_string(obj, obj_end, "pubDate", pubdate, sizeof(pubdate)))
@@ -729,20 +769,95 @@ static void url_encode(const char *src, char *dst, int dst_size) {
     dst[i] = '\0';
 }
 
-void fetch_rss_feed(void) {
-    if (!config.rss_url[0]) return;
-    if (!is_shell_safe(config.rss_url)) return;
+// Extract the domain from a URL, skipping protocol and www.
+// Returns pointer to the character after the domain (/ or ? or \0).
+static const char *extract_domain(const char *url, char *domain, int domain_size) {
+    const char *p = strstr(url, "://");
+    p = p ? p + 3 : url;
+    if (strncmp(p, "www.", 4) == 0) p += 4;
+    int i = 0;
+    while (*p && *p != '/' && *p != '?' && i < domain_size - 1)
+        domain[i++] = *p++;
+    domain[i] = '\0';
+    return p;
+}
+
+// Extract folder segments from URL path (strips filename — last component with a dot).
+// Returns number of folders extracted.
+static int extract_folders(const char *path, char folders[][32], int max_folders) {
+    if (*path != '/') return 0;
+    int n = 0;
+    const char *p = path;
+    while (*p == '/' && n < max_folders) {
+        p++;
+        int i = 0;
+        while (*p && *p != '/' && *p != '?' && i < 31)
+            folders[n][i++] = *p++;
+        folders[n][i] = '\0';
+        if (folders[n][0]) n++;
+    }
+    if (n > 0 && strchr(folders[n - 1], '.')) n--;
+    return n;
+}
+
+// Build RSS cycling label from URL.
+// No domain collision: "domain.com"
+// Domain collision, no folders: "domain.com"
+// Domain collision with folders: "//deepest_folder" (slashes = depth)
+// Domain collision, same path, different query param: differing param value
+static void rss_url_label(const char *url, int url_idx, char *label, int label_size) {
+    char domain[32];
+    const char *after_domain = extract_domain(url, domain, sizeof(domain));
+
+    // Check if another URL shares this domain
+    int collision = 0;
+    for (int j = 0; j < config.num_rss_urls; j++) {
+        if (j == url_idx) continue;
+        char other_domain[32];
+        extract_domain(config.rss_urls[j], other_domain, sizeof(other_domain));
+        if (strcmp(domain, other_domain) == 0) { collision = 1; break; }
+    }
+
+    if (!collision) {
+        snprintf(label, label_size, "%s", domain);
+        return;
+    }
+
+    // Extract folders for this URL
+    char folders[8][32];
+    int nfolders = extract_folders(after_domain, folders, 8);
+
+    if (nfolders == 0) {
+        // No folders — show domain (root-level feed)
+        snprintf(label, label_size, "%s", domain);
+        return;
+    }
+
+    // Label: "...deepest_folder" to indicate truncated domain
+    snprintf(label, label_size, "...%s", folders[nfolders - 1]);
+}
+
+void fetch_rss_feed(RssCache *out) {
+    if (config.num_rss_urls == 0) return;
+
+    // Cycle to next URL
+    static int rss_idx = -1;  // -1 so first call starts at 0
+    rss_idx = (rss_idx + 1) % config.num_rss_urls;
+
+    const char *url = config.rss_urls[rss_idx];
+    if (!url[0]) return;
+    if (!is_shell_safe(url)) return;
 
     static char response[65536];  // 64KB
     RssCache tmp = {0};
     char cmd[1024];
-    int method = rss_cache.fetch_method;
+    int method = out->fetch_methods[rss_idx];
 
     // Try direct XML (skip if we already know it needs JSON)
     if (method != RSS_METHOD_JSON) {
         snprintf(cmd, sizeof(cmd),
-            "curl -s --connect-timeout 10 -A 'Mozilla/5.0' '%s' 2>/dev/null",
-            config.rss_url);
+            "curl -s --max-time 30 --connect-timeout 10 -A 'Mozilla/5.0' '%s' 2>/dev/null",
+            url);
 
         if (run_cmd(cmd, response, sizeof(response)) && strstr(response, "<item>")) {
             parse_rss_xml(response, &tmp);
@@ -754,9 +869,9 @@ void fetch_rss_feed(void) {
     // rss2json fallback (skip if we already know direct XML works)
     if (tmp.num_items == 0 && method != RSS_METHOD_XML) {
         char encoded_url[512];
-        url_encode(config.rss_url, encoded_url, sizeof(encoded_url));
+        url_encode(url, encoded_url, sizeof(encoded_url));
         snprintf(cmd, sizeof(cmd),
-            "curl -s --connect-timeout 10 "
+            "curl -s --max-time 30 --connect-timeout 10 "
             "'https://api.rss2json.com/v1/api.json?rss_url=%s' 2>/dev/null",
             encoded_url);
 
@@ -766,11 +881,22 @@ void fetch_rss_feed(void) {
             method = RSS_METHOD_JSON;
     }
 
-    // Update cache if we got results
+    // Update output cache if we got results
     if (tmp.num_items > 0) {
-        tmp.fetch_method = method;
+        // Preserve per-URL method cache from previous state
+        memcpy(tmp.fetch_methods, out->fetch_methods, sizeof(tmp.fetch_methods));
+        tmp.fetch_methods[rss_idx] = method;
         tmp.last_fetched = time(NULL);
-        rss_cache = tmp;
+        // Compute label for cycling indicator
+        if (config.num_rss_urls > 1) {
+            rss_url_label(url, rss_idx, tmp.label, sizeof(tmp.label));
+            int next_idx = (rss_idx + 1) % config.num_rss_urls;
+            rss_url_label(config.rss_urls[next_idx], next_idx, tmp.next_label, sizeof(tmp.next_label));
+        } else {
+            tmp.label[0] = '\0';
+            tmp.next_label[0] = '\0';
+        }
+        *out = tmp;
     }
 }
 
@@ -781,13 +907,16 @@ void fetch_rss_feed(void) {
 static void send_webhook(const char *url, const char *message) {
     if (!url[0] || !is_shell_safe(url)) return;
 
-    // Escape double quotes in message for JSON
+    // Escape/strip characters unsafe for JSON-in-shell-single-quotes
     char safe_msg[512];
     int j = 0;
     for (int i = 0; message[i] && j < (int)sizeof(safe_msg) - 2; i++) {
         if (message[i] == '"') {
             safe_msg[j++] = '\\';
             safe_msg[j++] = '"';
+        } else if (message[i] == '\'') {
+            // Apostrophes break single-quoted shell strings — skip them
+            continue;
         } else {
             safe_msg[j++] = message[i];
         }
@@ -796,7 +925,7 @@ static void send_webhook(const char *url, const char *message) {
 
     char cmd[1024];
     snprintf(cmd, sizeof(cmd),
-        "curl -s -X POST '%s' -H 'Content-Type: application/json' "
+        "curl -s --max-time 10 -X POST '%s' -H 'Content-Type: application/json' "
         "-d '{\"username\":\"Pinote\",\"content\":\"%s\"}' 2>/dev/null",
         url, safe_msg);
 
@@ -809,12 +938,18 @@ static void send_webhook(const char *url, const char *message) {
 // ============================================================
 
 void refresh_status_cache(void) {
+    // Phase 1: fetch everything into local copies (no lock held)
+    StatusCache sc = status_cache;    // start from current (preserves old values on failure)
+    ForecastCache fc = forecast_cache;
+    ChartData cd = chart_data;
+    RssCache rc = rss_cache;
+
     // Hue temperatures (stored individually for per-sensor coloring)
-    get_hue_temperatures(&config, &status_cache);
+    get_hue_temperatures(&config, &sc);
     if (!running) return;
 
     // Weather: current temperature + daily forecast (Open-Meteo)
-    fetch_weather();
+    fetch_weather(&sc, &fc);
     if (!running) return;
 
     // Fetch all anime in one API call (keep previous cache on failure)
@@ -823,33 +958,34 @@ void refresh_status_cache(void) {
     static long prev_airing_at[MAX_ANIME] = {0};
     static char prev_countdown[MAX_ANIME][64] = {{0}};
     static int prev_initialized = 0;
+    // Collect webhook messages before qsort (indices must match prev_* config order)
+    char webhook_msgs[MAX_ANIME][256];
+    int webhook_count = 0;
 
     if (fetch_all_anime(config.anilist_media_ids, anime_count, anime)) {
-        // Notify via webhook if any anime just aired since last refresh
-        // Must happen BEFORE qsort — indices match config order (stable between refreshes)
+        // Check for newly aired anime (before sort — indices match prev_* config order)
         if (config.webhook_url[0] && prev_initialized) {
             time_t now = time(NULL);
             for (int i = 0; i < anime_count; i++) {
                 if (prev_airing_at[i] <= 0) continue;
-                // Case 1: we passed the old airing time AND API advanced to next episode
-                // Case 2: we passed the old airing time AND no next episode (final)
                 int aired = ((long)now >= prev_airing_at[i] && anime[i].airing_at > prev_airing_at[i])
                          || ((long)now >= prev_airing_at[i] && anime[i].airing_at <= 0);
-                if (aired) {
+                if (aired && webhook_count < MAX_ANIME) {
                     char title[128];
                     strncpy(title, anime[i].title, sizeof(title) - 1);
                     title[sizeof(title) - 1] = '\0';
                     truncate_with_dots(title, 60);
-                    char msg[256];
-                    // Use prev_countdown for episode number — current one already advanced
                     const char *ep = strstr(prev_countdown[i], "Ep");
-                    if (anime[i].airing_at <= 0)
-                        snprintf(msg, sizeof(msg), ep ? "%s %s just aired! (final)" : "%s just aired! (final)",
-                                 title, ep);
+                    int final = (anime[i].airing_at <= 0);
+                    if (ep && final)
+                        snprintf(webhook_msgs[webhook_count], 256, "%s %s just aired! (final)", title, ep);
+                    else if (ep)
+                        snprintf(webhook_msgs[webhook_count], 256, "%s %s just aired!", title, ep);
+                    else if (final)
+                        snprintf(webhook_msgs[webhook_count], 256, "%s just aired! (final)", title);
                     else
-                        snprintf(msg, sizeof(msg), ep ? "%s %s just aired!" : "%s just aired!",
-                                 title, ep);
-                    send_webhook(config.webhook_url, msg);
+                        snprintf(webhook_msgs[webhook_count], 256, "%s just aired!", title);
+                    webhook_count++;
                 }
             }
         }
@@ -861,12 +997,13 @@ void refresh_status_cache(void) {
             prev_countdown[i][sizeof(prev_countdown[i]) - 1] = '\0';
         }
         prev_initialized = 1;
+        sc.anime_last_fetched = time(NULL);
 
         // Sort by airing time (soonest first, TBA last)
         qsort(anime, anime_count, sizeof(AnimeInfo), anime_sort_cmp);
 
         // Build individual anime title + countdown strings (separate for dual-color rendering)
-        status_cache.num_anime_entries = 0;
+        sc.num_anime_entries = 0;
         for (int i = 0; i < anime_count && i < MAX_ANIME; i++) {
             // Skip finished anime or ones with no upcoming episode
             if (anime[i].finished || anime[i].airing_at == 0) continue;
@@ -874,26 +1011,38 @@ void refresh_status_cache(void) {
             char *title = anime[i].title;
 
             // Clean up title: strip accents, truncate if configured
-            strip_utf8_accents(title);
+            strip_utf8_accents(title, sizeof(anime[i].title));
             if (config.anime_truncate > 0)
                 truncate_with_dots(title, config.anime_truncate);
 
-            int idx = status_cache.num_anime_entries;
-            snprintf(status_cache.anime_titles[idx], 128, "%s", title[0] ? title : "?");
-            snprintf(status_cache.anime_countdowns[idx], 64, "%s", anime[i].countdown);
-            status_cache.anime_airing_at[idx] = anime[i].airing_at;
-            status_cache.num_anime_entries++;
+            int idx = sc.num_anime_entries;
+            snprintf(sc.anime_titles[idx], 128, "%s", title[0] ? title : "?");
+            snprintf(sc.anime_countdowns[idx], 64, "%s", anime[i].countdown);
+            sc.anime_airing_at[idx] = anime[i].airing_at;
+            sc.num_anime_entries++;
         }
     }
 
     if (!running) return;
 
     // Fetch chart data
-    fetch_chart_data();
+    fetch_chart_data(&cd);
     if (!running) return;
 
     // Fetch RSS feed
-    fetch_rss_feed();
+    fetch_rss_feed(&rc);
 
-    status_cache.last_fetched = time(NULL);
+    sc.last_fetched = time(NULL);
+
+    // Phase 2: commit results under lock
+    pthread_mutex_lock(&store.lock);
+    status_cache = sc;
+    forecast_cache = fc;
+    chart_data = cd;
+    rss_cache = rc;
+    pthread_mutex_unlock(&store.lock);
+
+    // Send collected webhook notifications (outside lock — network I/O)
+    for (int i = 0; i < webhook_count; i++)
+        send_webhook(config.webhook_url, webhook_msgs[i]);
 }

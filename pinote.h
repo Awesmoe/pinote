@@ -145,7 +145,8 @@ typedef struct {
     char chart_api_key[128];  // API key (sent as X-API-Key header)
     int chart_height;        // chart height in pixels (0 = disabled)
     int refresh_interval;    // API refresh interval in seconds (default CACHE_TTL)
-    char rss_url[256];       // RSS feed URL
+    char rss_urls[10][256];  // RSS feed URLs (rss_url accepts string or array)
+    int num_rss_urls;
     int max_rss_items;       // max items to display (default 6)
     int rss_truncate;        // max characters for RSS titles (0 = no truncation)
     int rss_per_line;        // RSS items per row (1 or 2, default 1)
@@ -169,6 +170,7 @@ typedef struct {
     long anime_airing_at[MAX_ANIME];      // unix timestamp (0 = TBA, -1 = aired)
     int num_anime_entries;
     time_t last_fetched;
+    time_t anime_last_fetched;  // updated only on successful anime fetch
 } StatusCache;
 
 // Chart data structures
@@ -204,7 +206,9 @@ typedef struct {
 typedef struct {
     RssItem items[MAX_RSS_ITEMS];
     int num_items;
-    int fetch_method;   // RSS_METHOD_* — remembered after first successful fetch
+    int fetch_methods[10]; // per-URL fetch method cache
+    char label[64];      // display label for current feed (domain, shown when cycling)
+    char next_label[64]; // display label for next feed in rotation
     time_t last_fetched;
 } RssCache;
 
@@ -262,33 +266,39 @@ static const char latin_accent_map[64] =
     "AAAAAAACEEEEIIII" "DNOOOOOxOUUUUYTs"
     "aaaaaaaceeeeiiii" "dnooooo/ouuuuyty";
 
-static inline void strip_utf8_accents(char *str) {
+static inline void strip_utf8_accents(char *str, int size) {
+    size_t src_len = strnlen(str, size > 0 ? (size_t)size - 1 : 0);
     unsigned char *s = (unsigned char *)str;
+    unsigned char *src_end = s + src_len;
     char tmp[256];
     char *out = tmp;
-    char *end = tmp + sizeof(tmp) - 1;
-    while (*s && out < end) {
-        if (s[0] == 0xC3 && s[1] >= 0x80 && s[1] <= 0xBF) {
+    char *end = tmp + (size < (int)sizeof(tmp) ? size : (int)sizeof(tmp)) - 1;
+    while (s < src_end && out < end) {
+        if (s + 1 < src_end && s[0] == 0xC3 && s[1] >= 0x80 && s[1] <= 0xBF) {
             // 2-byte UTF-8: U+00C0..U+00FF → mapped ASCII
             *out++ = latin_accent_map[s[1] - 0x80];
             s += 2;
-        } else if (s[0] == 0xC2 && s[1] == 0xB7) {
+        } else if (s + 1 < src_end && s[0] == 0xC2 && s[1] == 0xB7) {
             // U+00B7 middle dot · → " - "
             if (out + 3 <= end) { *out++ = ' '; *out++ = '-'; *out++ = ' '; }
             s += 2;
-        } else if (s[0] == 0xE2 && s[1] == 0x80 && (s[2] == 0x93 || s[2] == 0x94)) {
+        } else if (s + 2 < src_end && s[0] == 0xE2 && s[1] == 0x80 &&
+                   (s[2] == 0x93 || s[2] == 0x94)) {
             // U+2013 en dash / U+2014 em dash → " - "
             if (out + 3 <= end) { *out++ = ' '; *out++ = '-'; *out++ = ' '; }
             s += 3;
-        } else if ((s[0] & 0xE0) == 0xC0 && (s[1] & 0xC0) == 0x80) {
+        } else if (s + 1 < src_end && (s[0] & 0xE0) == 0xC0 && (s[1] & 0xC0) == 0x80) {
             // Other 2-byte UTF-8: replace with '?'
             *out++ = '?';
             s += 2;
-        } else if ((s[0] & 0xF0) == 0xE0 && (s[1] & 0xC0) == 0x80 && (s[2] & 0xC0) == 0x80) {
+        } else if (s + 2 < src_end && (s[0] & 0xF0) == 0xE0 &&
+                   (s[1] & 0xC0) == 0x80 && (s[2] & 0xC0) == 0x80) {
             // 3-byte UTF-8: replace with '?'
             *out++ = '?';
             s += 3;
-        } else if ((s[0] & 0xF8) == 0xF0 && (s[1] & 0xC0) == 0x80 && (s[2] & 0xC0) == 0x80 && (s[3] & 0xC0) == 0x80) {
+        } else if (s + 3 < src_end && (s[0] & 0xF8) == 0xF0 &&
+                   (s[1] & 0xC0) == 0x80 && (s[2] & 0xC0) == 0x80 &&
+                   (s[3] & 0xC0) == 0x80) {
             // 4-byte UTF-8: replace with '?'
             *out++ = '?';
             s += 4;
@@ -328,8 +338,8 @@ void load_config(const char *path, AppConfig *cfg);
 // ============================================================
 
 int  run_cmd(const char *cmd, char *buf, int bufsize);
-void fetch_chart_data(void);
-void fetch_rss_feed(void);
+void fetch_chart_data(ChartData *cd);
+void fetch_rss_feed(RssCache *out);
 void refresh_status_cache(void);
 
 // ============================================================

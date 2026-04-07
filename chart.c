@@ -97,9 +97,10 @@ void draw_chart(Framebuffer *fb, int chart_x, int chart_y, int chart_w, int char
             if (x >= plot_x && x <= plot_x + plot_w) {
                 for (int y = plot_y; y < plot_y + plot_h; y += 4)
                     set_pixel(fb, x, y, 45, 45, 55);
-                struct tm *tm_info = localtime(&tick);
+                struct tm tm_buf;
+                localtime_r(&tick, &tm_buf);
                 char label[16];
-                strftime(label, sizeof(label), "%H:%M", tm_info);
+                strftime(label, sizeof(label), "%H:%M", &tm_buf);
                 int lw = strlen(label) * char_w;
                 draw_text(fb, x - lw / 2, xlabel_y, label, 140, 140, 140, fs);
             }
@@ -123,9 +124,10 @@ void draw_chart(Framebuffer *fb, int chart_x, int chart_y, int chart_w, int char
             if (x >= plot_x && x <= plot_x + plot_w) {
                 for (int y = plot_y; y < plot_y + plot_h; y += 4)
                     set_pixel(fb, x, y, 45, 45, 55);
-                struct tm *tm_info = localtime(&tick);
+                struct tm tm_buf;
+                localtime_r(&tick, &tm_buf);
                 char label[16];
-                strftime(label, sizeof(label), "%a", tm_info);
+                strftime(label, sizeof(label), "%a", &tm_buf);
                 int lw = strlen(label) * char_w;
                 draw_text(fb, x - lw / 2, xlabel_y, label, 140, 140, 140, fs);
             }

@@ -177,15 +177,17 @@ void draw_status_bar(Framebuffer *fb, int width) {
 
     // Right side: "Upd HH:MM  DD Mon HH:MM" right-aligned together
     time_t now = time(NULL);
-    struct tm *tm_info = localtime(&now);
+    struct tm tm_buf;
+    localtime_r(&now, &tm_buf);
     char datetime_str[16];
-    strftime(datetime_str, sizeof(datetime_str), "%d %b %H:%M", tm_info);
+    strftime(datetime_str, sizeof(datetime_str), "%d %b %H:%M", &tm_buf);
 
     char right_str[64];
     if (status_cache.last_fetched > 0) {
-        struct tm *upd_tm = localtime(&status_cache.last_fetched);
+        struct tm upd_buf;
+        localtime_r(&status_cache.last_fetched, &upd_buf);
         char upd_str[16];
-        strftime(upd_str, sizeof(upd_str), "Upd %H:%M", upd_tm);
+        strftime(upd_str, sizeof(upd_str), "Upd %H:%M", &upd_buf);
         snprintf(right_str, sizeof(right_str), "%s  %s", upd_str, datetime_str);
     } else {
         snprintf(right_str, sizeof(right_str), "%s", datetime_str);
@@ -196,9 +198,10 @@ void draw_status_bar(Framebuffer *fb, int width) {
 
     // Draw "Upd HH:MM" in dim, then clock in white
     if (status_cache.last_fetched > 0) {
-        struct tm *upd_tm = localtime(&status_cache.last_fetched);
+        struct tm upd_buf2;
+        localtime_r(&status_cache.last_fetched, &upd_buf2);
         char upd_str[16];
-        strftime(upd_str, sizeof(upd_str), "Upd %H:%M", upd_tm);
+        strftime(upd_str, sizeof(upd_str), "Upd %H:%M", &upd_buf2);
         int upd_end = draw_text(fb, right_x, row1_y, upd_str, 150, 150, 160, FONT_SCALE);
         upd_end = draw_text(fb, upd_end, row1_y, "  ", 150, 150, 160, FONT_SCALE);
         draw_text(fb, upd_end, row1_y, datetime_str, 255, 255, 255, FONT_SCALE);
@@ -212,7 +215,9 @@ void draw_status_bar(Framebuffer *fb, int width) {
 // ============================================================
 
 int get_anime_height(void) {
-    if (status_cache.num_anime_entries == 0) return 0;
+    if (status_cache.num_anime_entries == 0) {
+        return (config.num_anime > 0) ? STATUS_ROW_HEIGHT : 0;
+    }
     int per_line = config.anime_per_line <= 0 ? 2 : config.anime_per_line;
     int rows = (status_cache.num_anime_entries + per_line - 1) / per_line;
     return rows * STATUS_ROW_HEIGHT;
@@ -242,10 +247,24 @@ static void anime_countdown_color(long airing_at, uint8_t *r, uint8_t *g, uint8_
 }
 
 void draw_anime(Framebuffer *fb, int x, int y, int w, int h) {
-    if (status_cache.num_anime_entries == 0) return;
+    if (status_cache.num_anime_entries == 0) {
+        if (config.num_anime > 0) {
+            fill_rect(fb, x, y, w, h, BG_MODULE_R, BG_MODULE_G, BG_MODULE_B);
+            fill_rect(fb, x, y, w, 1, SEP_MINOR_R, SEP_MINOR_G, SEP_MINOR_B);
+            int text_y = y + (STATUS_ROW_HEIGHT - 16 * FONT_SCALE) / 2;
+            draw_text(fb, x + 10, text_y, "Anime: waiting for data...", 90, 90, 100, FONT_SCALE);
+        }
+        return;
+    }
 
     // Background
     fill_rect(fb, x, y, w, h, BG_MODULE_R, BG_MODULE_G, BG_MODULE_B);
+
+    // Fade colors when data is stale (API down, showing cached data)
+    int stale = status_cache.anime_last_fetched &&
+        status_cache.last_fetched - status_cache.anime_last_fetched >= config.refresh_interval;
+    uint8_t title_r = stale ? 100 : 220, title_g = stale ? 100 : 220, title_b = stale ? 110 : 230;
+    uint8_t sep_r   = stale ?  70 : 120, sep_g   = stale ?  70 : 110, sep_b   = stale ?  80 : 160;
 
     int per_line = config.anime_per_line <= 0 ? 2 : config.anime_per_line;
     int row = 0;
@@ -272,10 +291,11 @@ void draw_anime(Framebuffer *fb, int x, int y, int w, int h) {
             title[sizeof(title) - 1] = '\0';
             truncate_with_dots(title, max_title);
 
-            int tx = draw_text(fb, x + 10, row_y, title, 180, 150, 255, FONT_SCALE);
-            tx = draw_text(fb, tx, row_y, ": ", 120, 110, 160, FONT_SCALE);
+            int tx = draw_text(fb, x + 10, row_y, title, title_r, title_g, title_b, FONT_SCALE);
+            tx = draw_text(fb, tx, row_y, ": ", sep_r, sep_g, sep_b, FONT_SCALE);
             uint8_t cr, cg, cb;
             anime_countdown_color(status_cache.anime_airing_at[i], &cr, &cg, &cb);
+            if (stale) { cr = 90; cg = 90; cb = 90; }
             draw_text(fb, tx, row_y, status_cache.anime_countdowns[i], cr, cg, cb, FONT_SCALE);
         }
 
@@ -295,10 +315,11 @@ void draw_anime(Framebuffer *fb, int x, int y, int w, int h) {
             int full_w = (strlen(title) + 2 + cd_len) * char_w;
             int rx = x + w - full_w - 10;
 
-            rx = draw_text(fb, rx, row_y, title, 180, 150, 255, FONT_SCALE);
-            rx = draw_text(fb, rx, row_y, ": ", 120, 110, 160, FONT_SCALE);
+            rx = draw_text(fb, rx, row_y, title, title_r, title_g, title_b, FONT_SCALE);
+            rx = draw_text(fb, rx, row_y, ": ", sep_r, sep_g, sep_b, FONT_SCALE);
             uint8_t cr, cg, cb;
             anime_countdown_color(status_cache.anime_airing_at[i + 1], &cr, &cg, &cb);
+            if (stale) { cr = 90; cg = 90; cb = 90; }
             draw_text(fb, rx, row_y, status_cache.anime_countdowns[i + 1], cr, cg, cb, FONT_SCALE);
         }
 
@@ -619,9 +640,7 @@ static void *status_refresh_thread(void *arg) {
     while (running) {
         time_t now = time(NULL);
         if (now - status_cache.last_fetched >= config.refresh_interval) {
-            pthread_mutex_lock(&store.lock);
             refresh_status_cache();
-            pthread_mutex_unlock(&store.lock);
         }
         render_screen();
         sleep(30);
@@ -676,17 +695,21 @@ static int parse_json_note(const char *json, Note *note) {
                 bracket_depth--;
                 if (bracket_depth == 0) break;
             } else if (*p == '{') {
+                // Find this point object's closing brace
+                const char *pt_end = strchr(p, '}');
+                if (!pt_end) break;
+
                 float x = 0, y = 0;
 
                 const char *x_pos = strstr(p, "\"x\":");
-                if (x_pos) {
+                if (x_pos && x_pos < pt_end) {
                     const char *x_val = x_pos + 4;
                     while (*x_val && (*x_val == ' ' || *x_val == '\t')) x_val++;
                     sscanf(x_val, "%f", &x);
                 }
 
                 const char *y_pos = strstr(p, "\"y\":");
-                if (y_pos) {
+                if (y_pos && y_pos < pt_end) {
                     const char *y_val = y_pos + 4;
                     while (*y_val && (*y_val == ' ' || *y_val == '\t')) y_val++;
                     sscanf(y_val, "%f", &y);
@@ -696,14 +719,14 @@ static int parse_json_note(const char *json, Note *note) {
                 stroke->points[stroke->num_points].y = y;
                 stroke->num_points++;
 
-                p = strchr(p, '}');
-                if (!p) break;
+                p = pt_end;
             }
             p++;
         }
 
         stroke_idx++;
-        ptr = strchr(stroke_obj, '}');
+        // Advance past the stroke object's closing brace (p is past the points array)
+        ptr = strchr(p, '}');
         if (!ptr) break;
         ptr++;
     }
@@ -863,6 +886,9 @@ static void *server_thread(void *arg) {
 
         int client_socket = accept(server_socket, (struct sockaddr *)&client_addr, &client_len);
         if (client_socket < 0) continue;
+
+        struct timeval tv = { .tv_sec = 3, .tv_usec = 0 };
+        setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
         handle_request(client_socket);
     }

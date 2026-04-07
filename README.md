@@ -14,7 +14,7 @@ A lightweight C server that turns a Raspberry Pi with an LCD into a handwritten 
 - **Double-buffered** — flicker-free screen updates via back buffer + single memcpy flip
 - **Module layout system** — configurable display modules (anime, chart, RSS, forecast, notes) placed via JSON config as full, half, or spanning width
 - **Data chart** — line chart with auto-scaled axes, color-coded lines, and legend. Feeds from any JSON API returning time-series data (e.g. temperature sensors)
-- **RSS feed** — displays headlines from any RSS feed (direct XML or rss2json fallback for Cloudflare-protected sites)
+- **RSS feed** — displays headlines from any RSS feed (direct XML or rss2json fallback for Cloudflare-protected sites). Supports multiple feeds that cycle each refresh, with domain label and next-feed indicator
 - **Status bar** — IP address, WiFi signal, sensor temperatures, outside weather, last updated timestamp, and clock
 - **Outside weather** — current temperature via [Open-Meteo](https://open-meteo.com/) (free, no API key)
 - **Weather forecast** — multi-day forecast with conditions, temperatures, wind, rain, and UV index via Open-Meteo. Configurable 1-7 days, adapts to full or half width
@@ -114,7 +114,7 @@ Create a `pinote_config.json` in the same directory as the server:
   "chart_api_key": "YOUR_API_KEY_HERE",
   "chart_height": 300,
   "refresh_interval": 1800,
-  "rss_url": "https://example.com/rss",
+  "rss_url": ["https://example.com/rss", "https://other.com/feed"],
   "max_rss_items": 6,
   "rss_truncate": 30,
   "rss_per_line": 1,
@@ -150,7 +150,7 @@ All fields are optional. The server runs fine without a config file — you just
 | `forecast_days` | int | `3` | Number of forecast days to show (1-7, 0 to disable) |
 | `sprite_enabled` | int | `0` | Set to `1` to show animated sprite overlay |
 | `refresh_interval` | int | `900` | How often to refresh API data in seconds (minimum 300) |
-| `rss_url` | string | — | RSS feed URL |
+| `rss_url` | string or string[] | — | RSS feed URL, or array of URLs to cycle through each refresh |
 | `max_rss_items` | int | `6` | Max RSS items to display (max 20) |
 | `rss_truncate` | int | `0` | Max characters for RSS titles (0 = no truncation) |
 | `rss_per_line` | int | `1` | RSS items per row (1 or 2) |
@@ -210,9 +210,9 @@ The sprite renders at `SPRITE_FPS` (default 10, set in `pinote.h`) in the bottom
 
 #### Sprite gallery
 
-![Sprite animation](sprites/platelet.gif)
+![Platelet](sprites/platelet.gif) ![Kanna](sprites/kanna.gif)
 
-![Sprite sheet](sprites/platelet.jpg)
+![Platelet sheet](sprites/platelet.jpg) ![Kanna sheet](sprites/kanna.jpg)
 
 ## Display Layout
 

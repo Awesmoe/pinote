@@ -62,18 +62,10 @@ void draw_forecast(Framebuffer *fb, int x, int y, int w, int h) {
     int char_h = 16 * fs;
     int full_mode = (w >= char_w * 35);
 
-    // Data age indicator on first row (right-aligned, dim) — temporary, remove once caching is verified
-    if (forecast_cache.last_fetched > 0) {
-        int age_min = (int)(time(NULL) - forecast_cache.last_fetched) / 60;
-        char age_str[32];
-        if (age_min < 1)
-            snprintf(age_str, sizeof(age_str), "(live)");
-        else
-            snprintf(age_str, sizeof(age_str), "(%dm ago)", age_min);
-        int age_w = strlen(age_str) * char_w;
-        int age_x = x + w - age_w - 10;
-        int age_y = y + (line_height - char_h) / 2;
-        draw_text(fb, age_x, age_y, age_str, 80, 80, 90, fs);
+    // Stale data indicator: dim * in top-right if forecast hasn't refreshed recently
+    if (forecast_cache.last_fetched > 0 &&
+        status_cache.last_fetched - forecast_cache.last_fetched >= config.refresh_interval) {
+        draw_text(fb, x + w - char_w - 4, y + 2, "*", 100, 100, 100, fs);
     }
 
     for (int i = 0; i < forecast_cache.num_days; i++) {
