@@ -216,7 +216,9 @@ void draw_status_bar(Framebuffer *fb, int width) {
 
 int get_anime_height(void) {
     if (status_cache.num_anime_entries == 0) {
-        return (config.num_anime > 0) ? STATUS_ROW_HEIGHT : 0;
+        // Reserve a placeholder row until the first successful fetch populates
+        // the cache; the anime module is only queried when it's in modules[].
+        return STATUS_ROW_HEIGHT;
     }
     int per_line = config.anime_per_line <= 0 ? 2 : config.anime_per_line;
     int rows = (status_cache.num_anime_entries + per_line - 1) / per_line;
@@ -248,12 +250,10 @@ static void anime_countdown_color(long airing_at, uint8_t *r, uint8_t *g, uint8_
 
 void draw_anime(Framebuffer *fb, int x, int y, int w, int h) {
     if (status_cache.num_anime_entries == 0) {
-        if (config.num_anime > 0) {
-            fill_rect(fb, x, y, w, h, BG_MODULE_R, BG_MODULE_G, BG_MODULE_B);
-            fill_rect(fb, x, y, w, 1, SEP_MINOR_R, SEP_MINOR_G, SEP_MINOR_B);
-            int text_y = y + (STATUS_ROW_HEIGHT - 16 * FONT_SCALE) / 2;
-            draw_text(fb, x + 10, text_y, "Anime: waiting for data...", 90, 90, 100, FONT_SCALE);
-        }
+        fill_rect(fb, x, y, w, h, BG_MODULE_R, BG_MODULE_G, BG_MODULE_B);
+        fill_rect(fb, x, y, w, 1, SEP_MINOR_R, SEP_MINOR_G, SEP_MINOR_B);
+        int text_y = y + (STATUS_ROW_HEIGHT - 16 * FONT_SCALE) / 2;
+        draw_text(fb, x + 10, text_y, "Anime: waiting for data...", 90, 90, 100, FONT_SCALE);
         return;
     }
 

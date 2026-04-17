@@ -133,8 +133,6 @@ typedef struct {
     char hue_api_key[128];
     char hue_sensor_ids[10][16];
     int num_hue_sensors;
-    int anilist_media_ids[MAX_ANIME];
-    int num_anime;
     int anime_truncate;    // max characters for anime titles (0 = no truncation)
     int anime_per_line;    // how many anime per row (0 or 2 = two per line, 1 = one per line)
     float note_scale;      // scale factor for notes (default 0.6)
@@ -143,6 +141,8 @@ typedef struct {
     int has_location;      // 1 if lat/lon configured
     char chart_api_url[256];  // URL for chart data API
     char chart_api_key[128];  // API key (sent as X-API-Key header)
+    char anidata_url[256];    // Base URL for ANIDATA service (anime metadata)
+    int anime_include_p2w;    // 1 = include MAL plan-to-watch (default 1), 0 = watching only
     int chart_height;        // chart height in pixels (0 = disabled)
     int refresh_interval;    // API refresh interval in seconds (default CACHE_TTL)
     char rss_urls[10][256];  // RSS feed URLs (rss_url accepts string or array)

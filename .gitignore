@@ -1,3 +1,9 @@
 pinote_config.json
 CLAUDE.md
 CHANGES.txt
+*.bmp
+sprite_data_*
+*.sh
+/dance
+.claude/
+*.exe

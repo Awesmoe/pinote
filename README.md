@@ -1,69 +1,77 @@
 # PiNote
 
-A lightweight C server that turns a Raspberry Pi with an LCD into a handwritten note display. Notes are sent from an Android app over HTTP and rendered directly to the Linux framebuffer — no X11, no browser, no desktop environment needed.
+> **Need a digital notepad? A dashboard? Try PiNote — runs on any Linux box with a framebuffer.**
 
-![Built for Raspberry Pi](https://img.shields.io/badge/Raspberry%20Pi-Zero%20W%202-c51a4a?logo=raspberrypi&logoColor=white)
-![Language](https://img.shields.io/badge/Language-C-blue)
-![License](https://img.shields.io/badge/License-MIT-green)
+PiNote is a lightweight C server that turns any Raspberry Pi and LCD into an always-on personal display. Draw handwritten notes on your Android phone and they appear on screen — alongside weather, anime countdowns, RSS feeds, sensor data, and whatever else you want on your wall.
 
-![PiNote in action](photo2.jpg)
+Whatever that is, PiNote's modular layout system has you covered. Mix and match modules — notes, charts, forecasts, RSS, anime countdowns — and arrange them in full or half-width columns via a simple JSON config. No recompile needed.
+
+No desktop environment. No browser. No Electron. Just C writing pixels directly to the framebuffer. If MagicMirror² feels like bringing a truck to carry a backpack, PiNote is a beautiful fanny pack.
+
+It runs on a **Raspberry Pi Zero W** — the original, 512MB, single core — at ~1.7% memory and ~5% CPU with all modules active.
+
+[![Built for Raspberry Pi](https://img.shields.io/badge/Raspberry%20Pi-Zero%20W%202-c51a4a?logo=raspberrypi&logoColor=white)](https://www.raspberrypi.com)
+[![Language](https://img.shields.io/badge/Language-C-blue)](https://github.com/Awesmoe/pinote)
+[![License](https://img.shields.io/badge/License-MIT-green)](https://github.com/Awesmoe/pinote/blob/main/LICENSE)
+
+[![PiNote in action](photo2.jpg)](photo2.jpg)
 
 ## Features
 
-- **Direct framebuffer rendering** — writes pixels to `/dev/fb0`, no display server overhead
-- **Double-buffered** — flicker-free screen updates via back buffer + single memcpy flip
-- **Module layout system** — configurable display modules (anime, chart, RSS, forecast, notes) placed via JSON config as full, half, or spanning width
-- **Data chart** — line chart with auto-scaled axes, color-coded lines, and legend. Feeds from any JSON API returning time-series data (e.g. temperature sensors)
-- **RSS feed** — displays headlines from any RSS feed (direct XML or rss2json fallback for Cloudflare-protected sites). Supports multiple feeds that cycle each refresh, with domain label and next-feed indicator
-- **Status bar** — IP address, WiFi signal, sensor temperatures, outside weather, last updated timestamp, and clock
-- **Outside weather** — current temperature via [Open-Meteo](https://open-meteo.com/) (free, no API key)
-- **Weather forecast** — multi-day forecast with conditions, temperatures, wind, rain, and UV index via Open-Meteo. Configurable 1-7 days, adapts to full or half width
-- **Animated sprite overlay** — animated pixel art character drawn to front buffer at configurable FPS, with fuzzy green-screen transparency keying
-- **Philips Hue integration** — displays temperature from one or more Hue sensors, colors match chart legend
-- **AniList integration** — countdown to next episode of tracked anime, with urgency-colored countdowns. Finished anime are automatically hidden. Optional webhook notifications when episodes air
-- **Auto-scaling notes** — notes shrink automatically when the screen fills up
-- **Persistent notes** — notes survive reboots, saved to disk on every change
-- **Orientation support** — landscape, portrait, and flipped variants (set in config, no recompile)
-- **Embedded bitmap font** — 8x16 CP437-style font, no external font files needed
+* **Direct framebuffer rendering** — writes pixels to `/dev/fb0`, no display server overhead
+* **Double-buffered** — flicker-free screen updates via back buffer + single memcpy flip
+* **Module layout system** — configurable display modules (anime, chart, RSS, forecast, notes) placed via JSON config as full, half, or spanning width
+* **Data chart** — line chart with auto-scaled axes, color-coded lines, and legend. Feeds from any JSON API returning time-series data (e.g. temperature sensors)
+* **RSS feed** — displays headlines from any RSS feed (direct XML or rss2json fallback for Cloudflare-protected sites)
+* **Status bar** — IP address, WiFi signal, sensor temperatures, outside weather, last updated timestamp, and clock
+* **Outside weather** — current temperature via [Open-Meteo](https://open-meteo.com/) (free, no API key)
+* **Weather forecast** — multi-day forecast with conditions, temperatures, wind, rain, and UV index via Open-Meteo. Configurable 1-7 days, adapts to full or half width
+* **Animated sprite overlay** — animated pixel art character drawn to front buffer at configurable FPS, with fuzzy green-screen transparency keying
+* **Philips Hue integration** — displays temperature from one or more Hue sensors, colors match chart legend
+* **MAL integration** — countdown to next episode of tracked anime (watching + plan-to-watch lists, via [ANIDATA](https://anidata.tunnle.de)), with urgency-colored countdowns. Finished anime are automatically hidden. Optional webhook notifications when episodes air
+* **Auto-scaling notes** — notes shrink automatically when the screen fills up
+* **Persistent notes** — notes survive reboots, saved to disk on every change
+* **Orientation support** — landscape, portrait, and flipped variants (set in config, no recompile)
+* **Embedded bitmap font** — 8x16 CP437-style font, no external font files needed
 
 ## Requirements
 
-- Raspberry Pi (tested on Pi Zero W 2) running Linux — also runs on the original Pi Zero W (512MB, single core) at ~1.7% memory and ~5% CPU with all modules active
-- LCD connected via HDMI with framebuffer at `/dev/fb0`
-- GCC and pthreads
+* Raspberry Pi running Linux (tested on Pi Zero W and Pi Zero W 2 — also runs on the original Pi Zero W at ~1.7% memory and ~5% CPU with all modules active)
+* LCD connected via HDMI with framebuffer at `/dev/fb0`
+* GCC and pthreads
 
 ## Building
 
-```bash
+```
 make
 ```
 
 Or manually:
 
-```bash
+```
 gcc -Wall -Wextra -O2 -o notes_server notes_server.c fb_draw.c config.c api_fetch.c chart.c rss.c sprite.c forecast.c -lpthread -lm
 ```
 
 ## Project Structure
 
 ```
-pinote.h         Shared types, defines, extern globals, function declarations
-fb_draw.c        Framebuffer init, pixels, lines, font data, text rendering
-config.c         JSON config file parsing
-api_fetch.c      API fetchers (Hue, Open-Meteo, chart data, AniList, RSS, forecast)
-chart.c          Data chart rendering (auto-scaled axes, multi-line, legend)
-rss.c            RSS feed module rendering
-forecast.c       Weather forecast module (daily forecast, WMO weather codes)
-sprite.c         Animated sprite overlay (front buffer, green-screen keying)
-notes_server.c   Main, HTTP server, notes, status bar, layout manager
-sprite_data.h    Sprite pixel data (generated by convert_sprite from a BMP sprite sheet)
-convert_sprite.c Offline tool: BMP sprite sheet → C header array
-Makefile         Build script
+pinote.h              Shared types, defines, extern globals, function declarations
+fb_draw.c             Framebuffer init, pixels, lines, font data, text rendering
+config.c              JSON config file parsing
+api_fetch.c           API fetchers (Hue, Open-Meteo, chart data, ANIDATA, RSS, forecast)
+chart.c               Data chart rendering (auto-scaled axes, multi-line, legend)
+rss.c                 RSS feed module rendering
+forecast.c            Weather forecast module (daily forecast, WMO weather codes)
+sprite.c              Animated sprite overlay (front buffer, green-screen keying)
+notes_server.c        Main, HTTP server, notes, status bar, layout manager
+sprite_data.h         Sprite pixel data (generated by convert_sprite from a BMP sprite sheet)
+convert_sprite.c      Offline tool: BMP sprite sheet → C header array
+Makefile              Build script
 ```
 
 ## Running
 
-```bash
+```
 sudo ./notes_server
 ```
 
@@ -85,7 +93,7 @@ User=root
 WantedBy=multi-user.target
 ```
 
-```bash
+```
 sudo systemctl enable pinote
 sudo systemctl start pinote
 ```
@@ -103,7 +111,7 @@ Create a `pinote_config.json` in the same directory as the server:
   "hue_bridge_ip": "192.168.0.10",
   "hue_api_key": "YOUR_HUE_API_KEY_HERE",
   "hue_sensor_ids": ["4", "42"],
-  "anilist_media_ids": [182255, 185753, 184951, 192261],
+  "anidata_url": "http://192.168.1.20:3457",
   "anime_truncate": 0,
   "anime_per_line": 1,
   "note_scale": 0.6,
@@ -133,21 +141,22 @@ All fields are optional. The server runs fine without a config file — you just
 ### Settings reference
 
 | Field | Type | Default | Description |
-|-------|------|---------|-------------|
+| --- | --- | --- | --- |
 | `orientation` | int | `1` | Display orientation: 1=landscape, 2=portrait, 3=landscape flipped, 4=portrait flipped |
 | `latitude` | float | — | Latitude for outside temperature (Open-Meteo) |
 | `longitude` | float | — | Longitude for outside temperature (Open-Meteo) |
 | `hue_bridge_ip` | string | — | IP address of your Philips Hue Bridge |
 | `hue_api_key` | string | — | Hue Bridge API key ([how to get one](https://developers.meethue.com/develop/get-started-2/)) |
 | `hue_sensor_ids` | string[] | — | Sensor IDs to read temperature from |
-| `anilist_media_ids` | int[] | — | [AniList](https://anilist.co) media IDs to track |
+| `anidata_url` | string | `http://192.168.178.37:3457` | Base URL of the [ANIDATA](https://anidata.tunnle.de) service. PiNote pulls `/ongoing?watching=true[&p2w=true]` — shows on your MAL watching (and optionally plan-to-watch) lists |
+| `anime_include_p2w` | int | `1` | Include MAL plan-to-watch list. Set to `0` to only show currently-watching anime |
 | `anime_truncate` | int | `0` | Max characters for anime titles (0 = no truncation) |
 | `anime_per_line` | int | `1` | Anime entries per row (1 or 2) |
-| `note_scale` | float | `0.6` | Note rendering scale (0.1-1.0). Notes auto-shrink below this when the screen fills up |
+| `note_scale` | float | `0.6` | Note rendering scale (0.1–1.0). Notes auto-shrink below this when the screen fills up |
 | `chart_api_url` | string | — | URL to fetch chart data from (see format below) |
 | `chart_api_key` | string | — | API key sent as `X-API-Key` header |
 | `chart_height` | int | `200` | Chart height in pixels. Set to `0` to disable |
-| `forecast_days` | int | `3` | Number of forecast days to show (1-7, 0 to disable) |
+| `forecast_days` | int | `3` | Number of forecast days to show (1–7, 0 to disable) |
 | `sprite_enabled` | int | `0` | Set to `1` to show animated sprite overlay |
 | `refresh_interval` | int | `900` | How often to refresh API data in seconds (minimum 300) |
 | `rss_url` | string or string[] | — | RSS feed URL, or array of URLs to cycle through each refresh |
@@ -155,7 +164,7 @@ All fields are optional. The server runs fine without a config file — you just
 | `rss_truncate` | int | `0` | Max characters for RSS titles (0 = no truncation) |
 | `rss_per_line` | int | `1` | RSS items per row (1 or 2) |
 | `rss_wrap` | int | `0` | Wrap long RSS titles to a second line instead of truncating (0 or 1) |
-| `webhook_url` | string | — | Webhook URL for notifications (e.g. Discord webhook). Sends a POST when a tracked anime episode airs |
+| `webhook_url` | string | — | Webhook URL for notifications (e.g. Discord). Sends a POST when a tracked anime episode airs |
 | `modules` | array | see below | Module layout configuration |
 
 ### Modules
@@ -163,7 +172,7 @@ All fields are optional. The server runs fine without a config file — you just
 The `modules` array controls which display modules are shown and how they're laid out. Each entry has a `type`, `width`, and optional `span`:
 
 | Field | Values | Description |
-|-------|--------|-------------|
+| --- | --- | --- |
 | `type` | `"anime"`, `"chart"`, `"rss"`, `"forecast"`, `"notes"` | Which module to display |
 | `width` | `"full"`, `"half"` | Full screen width (own row) or half (paired side-by-side) |
 | `span` | `1`, `2`, ... | Optional. A half-width module with `span: 2` spans the combined height of 2 other half-width modules stacked on the opposite side |
@@ -172,7 +181,8 @@ Half-width modules are grouped automatically. Modules with `span >= 2` claim the
 
 When a fixed-height module (e.g. chart) is paired with a flexible one (e.g. notes), the row uses the fixed module's height. For span groups, the stacked modules' heights sum up to determine the total group height.
 
-Default layout if `modules` is not specified:
+Default layout if `modules` is omitted:
+
 ```json
 [
   {"type": "anime", "width": "full"},
@@ -206,13 +216,13 @@ The server can display an animated sprite overlay (e.g. a dancing pixel art char
 4. This creates `sprite_data.h` — rebuild the server with `make clean && make`
 5. Set `"sprite_enabled": 1` in your config
 
-The sprite renders at `SPRITE_FPS` (default 10, set in `pinote.h`) in the bottom-right corner. Transparency uses fuzzy green-screen keying (high G, low R, low B) to handle compression artifacts from video-sourced sprite sheets. CPU overhead is negligible even on a Pi Zero W.
+The sprite renders at `SPRITE_FPS` (default 10, set in `pinote.h`) in the bottom-right corner. Transparency uses fuzzy green-screen keying (high G, low R, low B) to handle compression artifacts from video-sourced sprite sheets.
 
 #### Sprite gallery
 
-![Platelet](sprites/platelet.gif) ![Kanna](sprites/kanna.gif)
+![Sprite animation](sprites/platelet.gif)
 
-![Platelet sheet](sprites/platelet.jpg) ![Kanna sheet](sprites/kanna.jpg)
+![Sprite sheet](sprites/platelet.jpg)
 
 ## Display Layout
 
@@ -240,6 +250,7 @@ With half-width modules:
   {"type": "notes", "width": "half"}
 ]
 ```
+
 ```
 +--------------------------------------+
 | Status bar                           |
@@ -262,12 +273,13 @@ With span (one module spanning multiple rows):
   {"type": "rss", "width": "full"}
 ]
 ```
+
 ```
 +--------------------------------------+
 | Status bar                           |
 +------------------+-------------------+
 | Chart            | Notes             |
-+------------------+   (span 2)       |
++------------------+   (span 2)        |
 | Anime            |                   |
 +------------------+-------------------+
 | RSS headlines                        |
@@ -354,7 +366,7 @@ Android App --HTTP POST--> PiNote Server --mmap--> /dev/fb0 --> LCD
                     +-----------+-----------+          Sprite Thread
                     v           v           v        (front buffer,
                Note Store   Status Bar    APIs        fuzzy keying)
-               (disk +      (IP, WiFi,   (Hue, Weather, AniList,
+               (disk +      (IP, WiFi,   (Hue, Weather, ANIDATA,
                 memory)      clock)       Chart data, RSS)
                                             |
                            +------+------+------+--------+

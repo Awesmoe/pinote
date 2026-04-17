@@ -1,5 +1,5 @@
 /*
- * api_fetch.c - All remote API fetchers (Hue, Open-Meteo, AniList, temp history)
+ * api_fetch.c - All remote API fetchers (Hue, Open-Meteo, ANIDATA, temp history)
  */
 #include "pinote.h"
 
@@ -388,10 +388,12 @@ void fetch_chart_data(ChartData *cd) {
 }
 
 // ============================================================
-// AniList anime countdowns
+// ANIDATA anime countdowns (pulls from local ANIDATA service;
+// server-side filtered by the user's MAL watching + plan-to-watch lists)
 // ============================================================
 
 typedef struct {
+    int id;          // AniList media id (used to correlate across refreshes)
     char title[128];
     char countdown[64];
     long airing_at;  // unix timestamp, 0 = TBA
@@ -406,42 +408,54 @@ static const char *strstr_bounded(const char *haystack, const char *end, const c
     return p;
 }
 
-static void parse_one_anime(const char **pos, const char *end, AnimeInfo *info) {
-    memset(info, 0, sizeof(AnimeInfo));
-    const char *p = *pos;
-
-    // Parse status
-    const char *st = strstr_bounded(p, end, "\"status\":\"");
-    if (st) {
-        st += 10;
-        if (strncmp(st, "FINISHED", 8) == 0) info->finished = 1;
-    }
-
-    // Parse title (romaji) - handle JSON escaped quotes (\")
-    const char *romaji = strstr_bounded(p, end, "\"romaji\":\"");
-    if (romaji) {
-        romaji += 10;
-        int i = 0;
-        while (romaji < end && *romaji && i < (int)sizeof(info->title) - 1) {
-            if (*romaji == '\\' && *(romaji + 1) == '"') {
-                romaji++;
-                info->title[i++] = *romaji++;
-                continue;
-            }
-            if (*romaji == '"') break;
-            info->title[i++] = *romaji++;
+// Extract a JSON string value at "key": "..." within [p, end). Handles \"
+// escapes and tolerates whitespace between the colon and the opening quote
+// (pretty-printed JSON from ANIDATA uses "key": "value").
+static void extract_json_string(const char *p, const char *end, const char *key,
+                                char *out, int out_size) {
+    out[0] = '\0';
+    char pat[64];
+    snprintf(pat, sizeof(pat), "\"%s\":", key);
+    const char *s = strstr_bounded(p, end, pat);
+    if (!s) return;
+    s += strlen(pat);
+    while (s < end && (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r')) s++;
+    if (s >= end || *s != '"') return;
+    s++;  // past opening quote
+    int i = 0;
+    while (s < end && *s && i < out_size - 1) {
+        if (*s == '\\' && s + 1 < end && *(s + 1) == '"') {
+            s++;
+            out[i++] = *s++;
+            continue;
         }
-        info->title[i] = '\0';
+        if (*s == '"') break;
+        out[i++] = *s++;
+    }
+    out[i] = '\0';
+}
+
+// Fill info from the ANIDATA item at [p, end).
+static void parse_anidata_item(const char *p, const char *end, AnimeInfo *info) {
+    memset(info, 0, sizeof(AnimeInfo));
+
+    const char *id_pos = strstr_bounded(p, end, "\"id\":");
+    if (id_pos) sscanf(id_pos + strlen("\"id\":"), "%d", &info->id);
+
+    char status[32] = {0};
+    extract_json_string(p, end, "status", status, sizeof(status));
+    if (strcmp(status, "FINISHED") == 0) info->finished = 1;
+
+    extract_json_string(p, end, "title_romaji", info->title, sizeof(info->title));
+
+    const char *airing = strstr_bounded(p, end, "\"next_episode_at\":");
+    if (airing) {
+        sscanf(airing + strlen("\"next_episode_at\":"), "%ld", &info->airing_at);
     }
 
-    // Parse airingAt
-    const char *airing = strstr_bounded(p, end, "\"airingAt\":");
-    if (airing) {
-        sscanf(airing + strlen("\"airingAt\":"), "%ld", &info->airing_at);
-
+    if (info->airing_at > 0) {
         time_t now = time(NULL);
         long diff = info->airing_at - now;
-
         if (diff <= 0) {
             snprintf(info->countdown, sizeof(info->countdown), "Aired!");
         } else {
@@ -456,68 +470,131 @@ static void parse_one_anime(const char **pos, const char *end, AnimeInfo *info) 
                 snprintf(info->countdown, sizeof(info->countdown), "%dm", mins);
         }
 
-        const char *ep = strstr_bounded(p, end, "\"episode\":");
+        const char *ep = strstr_bounded(p, end, "\"next_episode\":");
         if (ep) {
             int ep_num = 0;
-            sscanf(ep + strlen("\"episode\":"), "%d", &ep_num);
-            char ep_str[32];
-            snprintf(ep_str, sizeof(ep_str), " Ep%d", ep_num);
-            strncat(info->countdown, ep_str, sizeof(info->countdown) - strlen(info->countdown) - 1);
+            sscanf(ep + strlen("\"next_episode\":"), "%d", &ep_num);
+            if (ep_num > 0) {
+                char ep_str[32];
+                snprintf(ep_str, sizeof(ep_str), " Ep%d", ep_num);
+                strncat(info->countdown, ep_str,
+                        sizeof(info->countdown) - strlen(info->countdown) - 1);
+
+                // Append " (N)" where N is user's MAL watched episode count.
+                // Skip if field is null/missing (e.g. plan-to-watch entries).
+                const char *watched = strstr_bounded(p, end, "\"mal_watched_episodes\":");
+                if (watched) {
+                    const char *v = watched + strlen("\"mal_watched_episodes\":");
+                    while (v < end && (*v == ' ' || *v == '\t')) v++;
+                    if (v < end && *v >= '0' && *v <= '9') {
+                        int watched_num = 0;
+                        sscanf(v, "%d", &watched_num);
+                        char w_str[32];
+                        snprintf(w_str, sizeof(w_str), " (%d)", watched_num);
+                        strncat(info->countdown, w_str,
+                                sizeof(info->countdown) - strlen(info->countdown) - 1);
+                    }
+                }
+            }
         }
     } else {
         snprintf(info->countdown, sizeof(info->countdown), "TBA");
     }
 }
 
-// Returns 1 on success, 0 on failure (out[] left untouched on failure)
-static int fetch_all_anime(const int *media_ids, int count, AnimeInfo *out) {
-    if (count <= 0) return 0;
+// Walk the top-level array at [start, end), invoking a callback per element.
+// Tracks brace depth with basic string/escape handling. Stops when running out.
+// Callback receives [item_start, item_end) window (exclusive end).
+typedef void (*anidata_item_cb)(const char *item_start, const char *item_end, void *ctx);
 
-    char query[4096];
-    int pos = 0;
-    pos += snprintf(query + pos, sizeof(query) - pos, "{");
-    for (int i = 0; i < count && pos < (int)sizeof(query) - 200; i++) {
-        pos += snprintf(query + pos, sizeof(query) - pos,
-            "a%d:Media(id:%d){status title{romaji}nextAiringEpisode{airingAt episode}}",
-            i, media_ids[i]);
-    }
-    pos += snprintf(query + pos, sizeof(query) - pos, "}");
+static void walk_anidata_array(const char *start, const char *end,
+                               anidata_item_cb cb, void *ctx) {
+    const char *p = start;
+    while (p < end && *p != '[') p++;
+    if (p >= end) return;
+    p++;  // past '['
 
-    char cmd[8192];
-    snprintf(cmd, sizeof(cmd),
-        "curl -s --max-time 30 --connect-timeout 10 -X POST 'https://graphql.anilist.co' "
-        "-H 'Content-Type: application/json' "
-        "-d '{\"query\":\"%s\"}' 2>/dev/null", query);
+    int depth = 0;
+    const char *item_start = NULL;
+    int in_string = 0;
 
-    char response[32768];
-    if (!run_cmd(cmd, response, sizeof(response)))
-        return 0;
-
-    // AniList error response (rate limit, server error, etc.) — keep previous cache
-    if (strstr(response, "\"errors\"") || !strstr(response, "\"data\"")) {
-        return 0;
-    }
-
-    const char *resp_end = response + strlen(response);
-    for (int i = 0; i < count; i++) {
-        char alias[16];
-        snprintf(alias, sizeof(alias), "\"a%d\":", i);
-        const char *entry = strstr(response, alias);
-        if (entry) {
-            // Find boundary: next alias or end of response
-            const char *boundary = resp_end;
-            for (int j = i + 1; j < count; j++) {
-                char next_alias[16];
-                snprintf(next_alias, sizeof(next_alias), "\"a%d\":", j);
-                const char *next = strstr(entry + 1, next_alias);
-                if (next) { boundary = next; break; }
-            }
-            parse_one_anime(&entry, boundary, &out[i]);
-        } else {
-            memset(&out[i], 0, sizeof(AnimeInfo));
-            snprintf(out[i].countdown, sizeof(out[i].countdown), "TBA");
+    while (p < end && *p) {
+        char c = *p;
+        if (in_string) {
+            if (c == '\\' && p + 1 < end) { p += 2; continue; }
+            if (c == '"') in_string = 0;
+            p++;
+            continue;
         }
+        if (c == '"') { in_string = 1; p++; continue; }
+        if (c == '{') {
+            if (depth == 0) item_start = p;
+            depth++;
+            p++;
+            continue;
+        }
+        if (c == '}') {
+            depth--;
+            if (depth == 0 && item_start) {
+                cb(item_start, p + 1, ctx);
+                item_start = NULL;
+            }
+            p++;
+            continue;
+        }
+        if (c == ']' && depth == 0) return;
+        p++;
     }
+}
+
+typedef struct {
+    AnimeInfo *out;
+    int count;
+    int max;
+} AnidataCtx;
+
+static void anidata_item_handler(const char *item_start, const char *item_end, void *ctx_) {
+    AnidataCtx *ctx = (AnidataCtx *)ctx_;
+    if (ctx->count >= ctx->max) return;
+    parse_anidata_item(item_start, item_end, &ctx->out[ctx->count]);
+    ctx->count++;
+}
+
+// Fetches the user's watching + plan-to-watch ongoing anime from ANIDATA.
+// Returns 1 on success with *out_count set; 0 on failure (out/out_count untouched).
+static int fetch_all_anime(AnimeInfo *out, int max, int *out_count) {
+    if (!config.anidata_url[0] || !is_shell_safe(config.anidata_url)) return 0;
+
+    // ANIDATA /ongoing?watching=true[&p2w=true] returns only the user's tracked
+    // shows. Each item is ~3-4 KB with cast/links/cover fields, so 256 KB
+    // comfortably fits MAX_ANIME (32) items with headroom. Heap-allocated
+    // because this runs on the refresh thread.
+    size_t bufsize = 256 * 1024;
+    char *response = malloc(bufsize);
+    if (!response) return 0;
+
+    const char *p2w_param = config.anime_include_p2w ? "&p2w=true" : "";
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd),
+        "curl -s --max-time 30 --connect-timeout 10 "
+        "'%s/ongoing?watching=true%s' 2>/dev/null",
+        config.anidata_url, p2w_param);
+
+    int len = run_cmd(cmd, response, (int)bufsize);
+    if (len <= 0 || !strchr(response, '[')) {
+        free(response);
+        return 0;
+    }
+
+    AnimeInfo staged[MAX_ANIME];
+    memset(staged, 0, sizeof(staged));
+    AnidataCtx ctx = { .out = staged, .count = 0,
+                       .max = max < MAX_ANIME ? max : MAX_ANIME };
+    walk_anidata_array(response, response + len, anidata_item_handler, &ctx);
+    free(response);
+
+    memcpy(out, staged, sizeof(AnimeInfo) * ctx.count);
+    *out_count = ctx.count;
     return 1;
 }
 
@@ -901,6 +978,38 @@ void fetch_rss_feed(RssCache *out) {
 }
 
 // ============================================================
+// ANIDATA refresh ping (targeted metadata refresh for one anime)
+// ============================================================
+
+// POST to {anidata_url}/refresh?id=N to nudge ANIDATA to refresh that show's
+// metadata immediately (bypassing its daily AniList sync). Captures curl's
+// "HTTP <code> t=<time>s" output or error text into `report` so callers can
+// surface it for debugging.
+static void anidata_refresh_and_report(int id, char *report, size_t report_size) {
+    if (report_size == 0) return;
+    report[0] = '\0';
+    if (id <= 0 || !config.anidata_url[0] || !is_shell_safe(config.anidata_url)) {
+        snprintf(report, report_size, "[refresh: skipped]");
+        return;
+    }
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd),
+        "curl -sS --max-time 10 -X POST -o /dev/null "
+        "-w 'HTTP %%{http_code} t=%%{time_total}s' "
+        "'%s/refresh?id=%d' 2>&1",
+        config.anidata_url, id);
+    char out[256];
+    int len = run_cmd(cmd, out, sizeof(out));
+    if (len <= 0) {
+        snprintf(report, report_size, "[refresh: no output]");
+        return;
+    }
+    while (len > 0 && (out[len-1] == '\n' || out[len-1] == '\r' || out[len-1] == ' '))
+        out[--len] = '\0';
+    snprintf(report, report_size, "[refresh: %s]", out);
+}
+
+// ============================================================
 // Webhook notification
 // ============================================================
 
@@ -952,30 +1061,54 @@ void refresh_status_cache(void) {
     fetch_weather(&sc, &fc);
     if (!running) return;
 
-    // Fetch all anime in one API call (keep previous cache on failure)
+    // Fetch all anime in one API call (keep previous cache on failure).
+    // Server-side filtering means the list can grow/shrink between refreshes
+    // as the user updates their MAL list, so prev state is keyed by AniList id
+    // rather than array position.
     AnimeInfo anime[MAX_ANIME];
-    int anime_count = config.num_anime;
-    static long prev_airing_at[MAX_ANIME] = {0};
-    static char prev_countdown[MAX_ANIME][64] = {{0}};
+    int anime_count = 0;
+    typedef struct { int id; long airing_at; char countdown[64]; } AnimePrev;
+    static AnimePrev prev[MAX_ANIME];
+    static int prev_count = 0;
     static int prev_initialized = 0;
-    // Collect webhook messages before qsort (indices must match prev_* config order)
     char webhook_msgs[MAX_ANIME][256];
+    int webhook_ids[MAX_ANIME];
     int webhook_count = 0;
 
-    if (fetch_all_anime(config.anilist_media_ids, anime_count, anime)) {
-        // Check for newly aired anime (before sort — indices match prev_* config order)
+    if (fetch_all_anime(anime, MAX_ANIME, &anime_count)) {
+        // Check for newly aired anime (before sort — order doesn't matter
+        // because we look prev up by id).
         if (config.webhook_url[0] && prev_initialized) {
             time_t now = time(NULL);
             for (int i = 0; i < anime_count; i++) {
-                if (prev_airing_at[i] <= 0) continue;
-                int aired = ((long)now >= prev_airing_at[i] && anime[i].airing_at > prev_airing_at[i])
-                         || ((long)now >= prev_airing_at[i] && anime[i].airing_at <= 0);
+                long prev_airing = 0;
+                const char *prev_cd = NULL;
+                for (int j = 0; j < prev_count; j++) {
+                    if (prev[j].id == anime[i].id) {
+                        prev_airing = prev[j].airing_at;
+                        prev_cd = prev[j].countdown;
+                        break;
+                    }
+                }
+                if (prev_airing <= 0) continue;
+                int aired = ((long)now >= prev_airing && anime[i].airing_at > prev_airing)
+                         || ((long)now >= prev_airing && anime[i].airing_at <= 0);
                 if (aired && webhook_count < MAX_ANIME) {
                     char title[128];
                     strncpy(title, anime[i].title, sizeof(title) - 1);
                     title[sizeof(title) - 1] = '\0';
                     truncate_with_dots(title, 60);
-                    const char *ep = strstr(prev_countdown[i], "Ep");
+                    // Pull just "EpN" out of the countdown; prev_cd may also
+                    // contain a trailing " (W)" watched-count suffix we don't
+                    // want in the webhook message.
+                    char ep_token[32] = {0};
+                    const char *ep_src = prev_cd ? strstr(prev_cd, "Ep") : NULL;
+                    if (ep_src) {
+                        int ep_num = 0;
+                        if (sscanf(ep_src, "Ep%d", &ep_num) == 1)
+                            snprintf(ep_token, sizeof(ep_token), "Ep%d", ep_num);
+                    }
+                    const char *ep = ep_token[0] ? ep_token : NULL;
                     int final = (anime[i].airing_at <= 0);
                     if (ep && final)
                         snprintf(webhook_msgs[webhook_count], 256, "%s %s just aired! (final)", title, ep);
@@ -985,16 +1118,19 @@ void refresh_status_cache(void) {
                         snprintf(webhook_msgs[webhook_count], 256, "%s just aired! (final)", title);
                     else
                         snprintf(webhook_msgs[webhook_count], 256, "%s just aired!", title);
+                    webhook_ids[webhook_count] = anime[i].id;
                     webhook_count++;
                 }
             }
         }
 
-        // Save current state for next comparison
+        // Save current state for next comparison (keyed by id)
+        prev_count = anime_count;
         for (int i = 0; i < anime_count; i++) {
-            prev_airing_at[i] = anime[i].airing_at;
-            strncpy(prev_countdown[i], anime[i].countdown, sizeof(prev_countdown[i]) - 1);
-            prev_countdown[i][sizeof(prev_countdown[i]) - 1] = '\0';
+            prev[i].id = anime[i].id;
+            prev[i].airing_at = anime[i].airing_at;
+            strncpy(prev[i].countdown, anime[i].countdown, sizeof(prev[i].countdown) - 1);
+            prev[i].countdown[sizeof(prev[i].countdown) - 1] = '\0';
         }
         prev_initialized = 1;
         sc.anime_last_fetched = time(NULL);
@@ -1042,7 +1178,15 @@ void refresh_status_cache(void) {
     rss_cache = rc;
     pthread_mutex_unlock(&store.lock);
 
-    // Send collected webhook notifications (outside lock — network I/O)
-    for (int i = 0; i < webhook_count; i++)
-        send_webhook(config.webhook_url, webhook_msgs[i]);
+    // Send collected webhook notifications (outside lock — network I/O).
+    // For each aired anime, nudge ANIDATA to refresh its metadata right now
+    // (so PiNote doesn't show a stale "next episode" until ANIDATA's daily
+    // sync runs) and append the refresh result to the webhook for debugging.
+    for (int i = 0; i < webhook_count; i++) {
+        char report[192];
+        anidata_refresh_and_report(webhook_ids[i], report, sizeof(report));
+        char full_msg[512];
+        snprintf(full_msg, sizeof(full_msg), "%s %s", webhook_msgs[i], report);
+        send_webhook(config.webhook_url, full_msg);
+    }
 }
