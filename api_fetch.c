@@ -988,7 +988,7 @@ static void anidata_refresh_and_report(int id, char *report, size_t report_size)
     if (report_size == 0) return;
     report[0] = '\0';
     if (id <= 0 || !config.anidata_url[0] || !is_shell_safe(config.anidata_url))
-        return;  // nothing to append if we can't/won't call
+        return;
 
     char auth_header[256] = {0};
     if (config.anidata_api_key[0] && is_shell_safe(config.anidata_api_key)) {

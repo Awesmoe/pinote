@@ -288,6 +288,20 @@ static inline void strip_utf8_accents(char *str, int size) {
             // U+2013 en dash / U+2014 em dash → " - "
             if (out + 3 <= end) { *out++ = ' '; *out++ = '-'; *out++ = ' '; }
             s += 3;
+        } else if (s + 2 < src_end && s[0] == 0xE2 && s[1] == 0x80 &&
+                   (s[2] == 0x98 || s[2] == 0x99 || s[2] == 0x9A || s[2] == 0x9B)) {
+            // U+2018..U+201B smart single quotes → '
+            *out++ = '\'';
+            s += 3;
+        } else if (s + 2 < src_end && s[0] == 0xE2 && s[1] == 0x80 &&
+                   (s[2] == 0x9C || s[2] == 0x9D || s[2] == 0x9E || s[2] == 0x9F)) {
+            // U+201C..U+201F smart double quotes → "
+            *out++ = '"';
+            s += 3;
+        } else if (s + 2 < src_end && s[0] == 0xE2 && s[1] == 0x80 && s[2] == 0xA6) {
+            // U+2026 horizontal ellipsis → ...
+            if (out + 3 <= end) { *out++ = '.'; *out++ = '.'; *out++ = '.'; }
+            s += 3;
         } else if (s + 1 < src_end && (s[0] & 0xE0) == 0xC0 && (s[1] & 0xC0) == 0x80) {
             // Other 2-byte UTF-8: replace with '?'
             *out++ = '?';
