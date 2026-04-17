@@ -220,7 +220,9 @@ The server can display an animated sprite overlay (e.g. a dancing pixel art char
 
 The sprite renders at `SPRITE_FPS` (default 10, set in `pinote.h`) in the bottom-right corner. Transparency uses fuzzy green-screen keying (high G, low R, low B) to handle compression artifacts from video-sourced sprite sheets.
 
-#### Sprite gallery
+#### Sprite gallery 
+
+(this is not my art, I just made a spritesheet out of it)
 
 ![Sprite animation](sprites/platelet.gif)
 
