@@ -5,6 +5,7 @@
   "hue_api_key": "YOUR_HUE_API_KEY_HERE",
   "hue_sensor_ids": ["4", "42"],
   "anidata_url": "http://192.168.1.20:3457",
+  "anidata_api_key": "YOUR_ANIDATA_API_KEY_HERE",
   "anime_truncate": 0,
   "anime_per_line": 1,
   "note_scale": 0.6,

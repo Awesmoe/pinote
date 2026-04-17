@@ -122,6 +122,8 @@ void load_config(const char *path, AppConfig *cfg) {
         snprintf(cfg->anidata_url, sizeof(cfg->anidata_url),
                  "http://192.168.178.37:3457");
     }
+    json_get_string(buf, "anidata_api_key", cfg->anidata_api_key, sizeof(cfg->anidata_api_key));
+
     cfg->anime_include_p2w = 1;
     json_get_int(buf, "anime_include_p2w", &cfg->anime_include_p2w);
 

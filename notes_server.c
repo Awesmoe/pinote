@@ -228,22 +228,22 @@ int get_anime_height(void) {
 // Pick countdown text color based on how soon it airs
 static void anime_countdown_color(long airing_at, uint8_t *r, uint8_t *g, uint8_t *b) {
     if (airing_at <= 0) {
-        // TBA or already aired — dim gray
+        // No data (TBA / stale fetch) — dim gray
         *r = 150; *g = 150; *b = 160;
         return;
     }
     long diff = airing_at - time(NULL);
     if (diff <= 0) {
-        // Just aired — green
+        // Just aired — green (kept bright to stand out)
         *r = 100; *g = 255; *b = 100;
     } else if (diff < 24 * 3600) {
-        // Under 24h — green (urgent)
-        *r = 100; *g = 255; *b = 100;
+        // Under 24h — yellow
+        *r = 255; *g = 220; *b = 80;
     } else if (diff < 2 * 24 * 3600) {
-        // Under 48h — warm yellow/orange (soon)
-        *r = 255; *g = 200; *b = 100;
+        // Under 48h — orange
+        *r = 255; *g = 140; *b = 60;
     } else {
-        // More than 3 days — default blue accent
+        // 48h+ — blue
         *r = 100; *g = 200; *b = 255;
     }
 }

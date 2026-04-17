@@ -112,6 +112,7 @@ Create a `pinote_config.json` in the same directory as the server:
   "hue_api_key": "YOUR_HUE_API_KEY_HERE",
   "hue_sensor_ids": ["4", "42"],
   "anidata_url": "http://192.168.1.20:3457",
+  "anidata_api_key": "YOUR_ANIDATA_API_KEY_HERE",
   "anime_truncate": 0,
   "anime_per_line": 1,
   "note_scale": 0.6,
@@ -149,6 +150,7 @@ All fields are optional. The server runs fine without a config file — you just
 | `hue_api_key` | string | — | Hue Bridge API key ([how to get one](https://developers.meethue.com/develop/get-started-2/)) |
 | `hue_sensor_ids` | string[] | — | Sensor IDs to read temperature from |
 | `anidata_url` | string | `http://192.168.178.37:3457` | Base URL of the [ANIDATA](https://anidata.tunnle.de) service. PiNote pulls `/ongoing?watching=true[&p2w=true]` — shows on your MAL watching (and optionally plan-to-watch) lists |
+| `anidata_api_key` | string | — | API key sent as `X-API-Key` for writes. Only required for the `/refresh?id=N` ping fired when an episode airs (so ANIDATA re-syncs that show's metadata immediately instead of waiting for its daily sync) |
 | `anime_include_p2w` | int | `1` | Include MAL plan-to-watch list. Set to `0` to only show currently-watching anime |
 | `anime_truncate` | int | `0` | Max characters for anime titles (0 = no truncation) |
 | `anime_per_line` | int | `1` | Anime entries per row (1 or 2) |

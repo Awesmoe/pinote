@@ -142,6 +142,7 @@ typedef struct {
     char chart_api_url[256];  // URL for chart data API
     char chart_api_key[128];  // API key (sent as X-API-Key header)
     char anidata_url[256];    // Base URL for ANIDATA service (anime metadata)
+    char anidata_api_key[128]; // API key for ANIDATA writes (sent as X-API-Key header)
     int anime_include_p2w;    // 1 = include MAL plan-to-watch (default 1), 0 = watching only
     int chart_height;        // chart height in pixels (0 = disabled)
     int refresh_interval;    // API refresh interval in seconds (default CACHE_TTL)

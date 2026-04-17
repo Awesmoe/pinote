@@ -982,31 +982,33 @@ void fetch_rss_feed(RssCache *out) {
 // ============================================================
 
 // POST to {anidata_url}/refresh?id=N to nudge ANIDATA to refresh that show's
-// metadata immediately (bypassing its daily AniList sync). Captures curl's
-// "HTTP <code> t=<time>s" output or error text into `report` so callers can
-// surface it for debugging.
+// metadata immediately (bypassing its daily AniList sync). Writes a short
+// human-readable status into `report` for the caller to append to the webhook.
 static void anidata_refresh_and_report(int id, char *report, size_t report_size) {
     if (report_size == 0) return;
     report[0] = '\0';
-    if (id <= 0 || !config.anidata_url[0] || !is_shell_safe(config.anidata_url)) {
-        snprintf(report, report_size, "[refresh: skipped]");
-        return;
+    if (id <= 0 || !config.anidata_url[0] || !is_shell_safe(config.anidata_url))
+        return;  // nothing to append if we can't/won't call
+
+    char auth_header[256] = {0};
+    if (config.anidata_api_key[0] && is_shell_safe(config.anidata_api_key)) {
+        snprintf(auth_header, sizeof(auth_header),
+                 "-H 'X-API-Key: %s' ", config.anidata_api_key);
     }
-    char cmd[512];
+    char cmd[768];
     snprintf(cmd, sizeof(cmd),
         "curl -sS --max-time 10 -X POST -o /dev/null "
-        "-w 'HTTP %%{http_code} t=%%{time_total}s' "
-        "'%s/refresh?id=%d' 2>&1",
-        config.anidata_url, id);
-    char out[256];
+        "-w '%%{http_code}' "
+        "%s'%s/refresh?id=%d' 2>/dev/null",
+        auth_header, config.anidata_url, id);
+    char out[32];
     int len = run_cmd(cmd, out, sizeof(out));
-    if (len <= 0) {
-        snprintf(report, report_size, "[refresh: no output]");
-        return;
-    }
-    while (len > 0 && (out[len-1] == '\n' || out[len-1] == '\r' || out[len-1] == ' '))
-        out[--len] = '\0';
-    snprintf(report, report_size, "[refresh: %s]", out);
+    int http_code = 0;
+    if (len > 0) sscanf(out, "%d", &http_code);
+    if (http_code >= 200 && http_code < 300)
+        snprintf(report, report_size, "(Anidata Updated)");
+    else
+        snprintf(report, report_size, "(Anidata Update Failed)");
 }
 
 // ============================================================
@@ -1071,6 +1073,7 @@ void refresh_status_cache(void) {
     static AnimePrev prev[MAX_ANIME];
     static int prev_count = 0;
     static int prev_initialized = 0;
+    static time_t prev_refresh_time = 0;  // wall-clock at last successful fetch
     char webhook_msgs[MAX_ANIME][256];
     int webhook_ids[MAX_ANIME];
     int webhook_count = 0;
@@ -1091,8 +1094,12 @@ void refresh_status_cache(void) {
                     }
                 }
                 if (prev_airing <= 0) continue;
-                int aired = ((long)now >= prev_airing && anime[i].airing_at > prev_airing)
-                         || ((long)now >= prev_airing && anime[i].airing_at <= 0);
+                // Fire when the airing time fell between the last refresh and
+                // now — independent of whether ANIDATA's data has advanced yet.
+                // Self-limiting: once prev_refresh_time passes prev_airing,
+                // this can't re-trigger on subsequent refreshes.
+                int aired = ((long)prev_refresh_time < prev_airing)
+                         && ((long)now >= prev_airing);
                 if (aired && webhook_count < MAX_ANIME) {
                     char title[128];
                     strncpy(title, anime[i].title, sizeof(title) - 1);
@@ -1133,7 +1140,8 @@ void refresh_status_cache(void) {
             prev[i].countdown[sizeof(prev[i].countdown) - 1] = '\0';
         }
         prev_initialized = 1;
-        sc.anime_last_fetched = time(NULL);
+        prev_refresh_time = time(NULL);
+        sc.anime_last_fetched = prev_refresh_time;
 
         // Sort by airing time (soonest first, TBA last)
         qsort(anime, anime_count, sizeof(AnimeInfo), anime_sort_cmp);
@@ -1181,12 +1189,17 @@ void refresh_status_cache(void) {
     // Send collected webhook notifications (outside lock — network I/O).
     // For each aired anime, nudge ANIDATA to refresh its metadata right now
     // (so PiNote doesn't show a stale "next episode" until ANIDATA's daily
-    // sync runs) and append the refresh result to the webhook for debugging.
+    // sync runs) and tag the webhook with the result.
     for (int i = 0; i < webhook_count; i++) {
-        char report[192];
+        char report[64];
         anidata_refresh_and_report(webhook_ids[i], report, sizeof(report));
         char full_msg[512];
-        snprintf(full_msg, sizeof(full_msg), "%s %s", webhook_msgs[i], report);
+        // Clamp webhook_msgs width explicitly — GCC's format-truncation
+        // analysis treats the 2D array row pessimistically otherwise.
+        if (report[0])
+            snprintf(full_msg, sizeof(full_msg), "%.255s %s", webhook_msgs[i], report);
+        else
+            snprintf(full_msg, sizeof(full_msg), "%.255s", webhook_msgs[i]);
         send_webhook(config.webhook_url, full_msg);
     }
 }
