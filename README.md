@@ -2,7 +2,7 @@
 
 > **Need a digital notepad? A dashboard without Chromium? Try PiNote — runs on ANY Linux box with a framebuffer.**
 
-Now available as Anidata branch. Check out my [Anidata](https://github.com/Awesmoe/Anidata) Project.
+Now available as Anidata branch. Check out my [Anidata](https://anidata.tunnle.de) Project.
 
 PiNote is a lightweight C server that turns any Raspberry Pi and LCD into an always-on personal display. Draw handwritten notes on your Android phone and they appear on screen — alongside weather, anime countdowns, RSS feeds, sensor data, and whatever else you want on your wall.
 
