@@ -1,14 +1,16 @@
 # PiNote
 
-> **Need a digital notepad? A dashboard? Try PiNote — runs on any Linux box with a framebuffer.**
+> **Need a digital notepad? A dashboard without Chromium? Try PiNote — runs on ANY Linux box with a framebuffer.**
+
+Now available as Anidata branch. Check out my [Anidata](https://github.com/Awesmoe/Anidata) Project.
 
 PiNote is a lightweight C server that turns any Raspberry Pi and LCD into an always-on personal display. Draw handwritten notes on your Android phone and they appear on screen — alongside weather, anime countdowns, RSS feeds, sensor data, and whatever else you want on your wall.
 
-Whatever that is, PiNote's modular layout system has you covered. Mix and match modules — notes, charts, forecasts, RSS, anime countdowns — and arrange them in full or half-width columns via a simple JSON config. No recompile needed.
+Mix and match modules — notes, charts, forecasts, RSS, anime countdowns — and arrange them in full or half-width columns via a simple JSON config. No recompile needed.
 
-No desktop environment. No browser. No Electron. Just C writing pixels directly to the framebuffer. If MagicMirror² feels like bringing a truck to carry a backpack, PiNote is a beautiful fanny pack.
+No desktop environment. No browser. No Electron. Just C writing pixels to the framebuffer. If MagicMirror² feels like bringing a truck to carry a backpack, PiNote is a beautiful fanny pack.
 
-It runs on a **Raspberry Pi Zero W** — the original, 512MB, single core — at ~1.7% memory and ~5% CPU with all modules active.
+It runs on a **Raspberry Pi Zero W** — the original from 2015, 512MB, single core — at ~1.7% memory and ~5% CPU with all modules active.
 
 [![Built for Raspberry Pi](https://img.shields.io/badge/Raspberry%20Pi-Zero%20W%202-c51a4a?logo=raspberrypi&logoColor=white)](https://www.raspberrypi.com)
 [![Language](https://img.shields.io/badge/Language-C-blue)](https://github.com/Awesmoe/pinote)
@@ -137,7 +139,7 @@ Create a `pinote_config.json` in the same directory as the server:
 }
 ```
 
-All fields are optional. The server runs fine without a config file — you just won't get any info modules.
+All fields are optional. The pinote notepad runs fine without a config file — you just won't get any info modules.
 
 ### Settings reference
 
