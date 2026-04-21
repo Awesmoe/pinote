@@ -156,6 +156,8 @@ typedef struct {
     int orientation;         // 1=landscape, 2=portrait, 3=landscape_flip, 4=portrait_flip
     char webhook_url[256];   // Discord/Slack/generic webhook for notifications
     int forecast_days;       // forecast days to show (1-7, default 3, 0 = disabled)
+    char background_image[256]; // path to 24-bit BMP, size must match logical display
+    int modules_transparent;    // 1 = skip module bg fills (show background_image through)
     ModuleConfig modules[MAX_MODULES];
     int num_modules;
 } AppConfig;
@@ -331,6 +333,7 @@ static inline void strip_utf8_accents(char *str, int size) {
 
 int  fb_init(Framebuffer *fb, const char *device);
 void get_display_size(Framebuffer *fb, int *width, int *height);
+int  fb_load_background(Framebuffer *fb, const char *path);
 void set_pixel(Framebuffer *fb, int logical_x, int logical_y, uint8_t r, uint8_t g, uint8_t b);
 void set_pixel_front(Framebuffer *fb, int logical_x, int logical_y, uint8_t r, uint8_t g, uint8_t b);
 void fill_rect(Framebuffer *fb, int x, int y, int w, int h, uint8_t r, uint8_t g, uint8_t b);

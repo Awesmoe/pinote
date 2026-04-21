@@ -57,7 +57,8 @@ void draw_chart(Framebuffer *fb, int chart_x, int chart_y, int chart_w, int char
     float axis_range = axis_max - axis_min;
 
     // Subtle chart background
-    fill_rect(fb, chart_x, chart_y, chart_w, chart_h, BG_CHART_R, BG_CHART_G, BG_CHART_B);
+    if (!config.modules_transparent)
+        fill_rect(fb, chart_x, chart_y, chart_w, chart_h, BG_CHART_R, BG_CHART_G, BG_CHART_B);
 
     // Horizontal grid lines and Y labels at tick values
     for (int t = y_min; t <= y_max; t += tick_step) {

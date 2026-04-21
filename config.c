@@ -192,6 +192,12 @@ void load_config(const char *path, AppConfig *cfg) {
     json_get_int(buf, "orientation", &cfg->orientation);
     if (cfg->orientation < 1 || cfg->orientation > 4) cfg->orientation = 0;
 
+    // Background image (optional path to 24-bit BMP)
+    json_get_string(buf, "background_image", cfg->background_image, sizeof(cfg->background_image));
+
+    // Transparent modules (skip module background fills so background_image shows through)
+    json_get_int(buf, "modules_transparent", &cfg->modules_transparent);
+
     // Parse modules array (default: anime full, chart full, notes full)
     cfg->num_modules = 0;
     const char *mods = strstr(buf, "\"modules\"");
