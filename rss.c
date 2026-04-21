@@ -121,7 +121,8 @@ void draw_rss(Framebuffer *fb, int x, int y, int w, int h) {
     if (rss_cache.num_items == 0) return;
 
     // Background
-    fill_rect(fb, x, y, w, h, BG_MODULE_R, BG_MODULE_G, BG_MODULE_B);
+    if (!config.modules_transparent)
+        fill_rect(fb, x, y, w, h, BG_MODULE_R, BG_MODULE_G, BG_MODULE_B);
 
     int line_height = STATUS_ROW_HEIGHT;
     int max_items = config.max_rss_items > 0 ? config.max_rss_items : 6;

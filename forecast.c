@@ -54,7 +54,8 @@ void draw_forecast(Framebuffer *fb, int x, int y, int w, int h) {
     if (forecast_cache.num_days == 0) return;
 
     // Background
-    fill_rect(fb, x, y, w, h, BG_MODULE_R, BG_MODULE_G, BG_MODULE_B);
+    if (!config.modules_transparent)
+        fill_rect(fb, x, y, w, h, BG_MODULE_R, BG_MODULE_G, BG_MODULE_B);
 
     int line_height = STATUS_ROW_HEIGHT;
     int fs = FONT_SCALE;

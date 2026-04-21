@@ -124,7 +124,8 @@ void draw_status_bar(Framebuffer *fb, int width) {
     int bar_height = STATUS_ROW_HEIGHT;
 
     // Draw background
-    fill_rect(fb, 0, 0, width, bar_height, BG_MODULE_R, BG_MODULE_G, BG_MODULE_B);
+    if (!config.modules_transparent)
+        fill_rect(fb, 0, 0, width, bar_height, BG_MODULE_R, BG_MODULE_G, BG_MODULE_B);
 
     // Separator line at bottom
     fill_rect(fb, 0, bar_height - 1, width, 1, SEP_MAJOR_R, SEP_MAJOR_G, SEP_MAJOR_B);
@@ -249,7 +250,8 @@ static void anime_countdown_color(long airing_at, uint8_t *r, uint8_t *g, uint8_
 void draw_anime(Framebuffer *fb, int x, int y, int w, int h) {
     if (status_cache.num_anime_entries == 0) {
         if (config.num_anime > 0) {
-            fill_rect(fb, x, y, w, h, BG_MODULE_R, BG_MODULE_G, BG_MODULE_B);
+            if (!config.modules_transparent)
+                fill_rect(fb, x, y, w, h, BG_MODULE_R, BG_MODULE_G, BG_MODULE_B);
             fill_rect(fb, x, y, w, 1, SEP_MINOR_R, SEP_MINOR_G, SEP_MINOR_B);
             int text_y = y + (STATUS_ROW_HEIGHT - 16 * FONT_SCALE) / 2;
             draw_text(fb, x + 10, text_y, "Anime: waiting for data...", 90, 90, 100, FONT_SCALE);
@@ -258,7 +260,8 @@ void draw_anime(Framebuffer *fb, int x, int y, int w, int h) {
     }
 
     // Background
-    fill_rect(fb, x, y, w, h, BG_MODULE_R, BG_MODULE_G, BG_MODULE_B);
+    if (!config.modules_transparent)
+        fill_rect(fb, x, y, w, h, BG_MODULE_R, BG_MODULE_G, BG_MODULE_B);
 
     // Fade colors when data is stale (API down, showing cached data)
     int stale = status_cache.anime_last_fetched &&
@@ -919,6 +922,17 @@ int main(void) {
         fprintf(stderr, "Failed to initialize framebuffer\n");
         return 1;
     }
+
+    // Report logical display size (useful for sizing a background image)
+    {
+        int dw, dh;
+        get_display_size(&fb, &dw, &dh);
+        fprintf(stderr, "display: logical size %dx%d\n", dw, dh);
+    }
+
+    // Optional background image (24-bit BMP, logical display size)
+    if (config.background_image[0])
+        fb_load_background(&fb, config.background_image);
 
     // Initial render
     render_screen();

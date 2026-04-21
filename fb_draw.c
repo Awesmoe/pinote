@@ -5,6 +5,10 @@
 
 static int current_orientation = 0;
 
+// Optional background image, pre-transformed to the physical framebuffer layout.
+// When set, clear_screen() memcpys this into backbuf instead of doing a solid fill.
+static uint8_t *bg_buffer = NULL;
+
 // Initialize framebuffer
 int fb_init(Framebuffer *fb, const char *device) {
     fb->fd = open(device, O_RDWR);
@@ -128,6 +132,11 @@ void fill_rect(Framebuffer *fb, int x, int y, int w, int h, uint8_t r, uint8_t g
 
 // Clear screen (back buffer) - fills first scanline, then memcpy to remaining rows
 void clear_screen(Framebuffer *fb) {
+    if (bg_buffer) {
+        memcpy(fb->backbuf, bg_buffer, fb->screensize);
+        return;
+    }
+
     int bpp = fb->vinfo.bits_per_pixel / 8;
     int line_len = fb->finfo.line_length;
     uint8_t *first_row = fb->backbuf;
@@ -150,6 +159,104 @@ void clear_screen(Framebuffer *fb) {
     for (int y = 1; y < (int)fb->vinfo.yres; y++) {
         memcpy(fb->backbuf + y * line_len, first_row, line_len);
     }
+}
+
+// Load a 24-bit uncompressed BMP as the background image.
+// The image is pre-transformed through the current orientation so clear_screen()
+// can blit it via a single memcpy. Returns 0 on success, -1 on failure.
+// Dimensions must match the logical display exactly (as reported by get_display_size).
+int fb_load_background(Framebuffer *fb, const char *path) {
+    if (!path || !path[0]) return -1;
+
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        fprintf(stderr, "background: cannot open '%s'\n", path);
+        return -1;
+    }
+
+    uint8_t fh[14], dh[40];
+    if (fread(fh, 1, 14, f) != 14 || fh[0] != 'B' || fh[1] != 'M' ||
+        fread(dh, 1, 40, f) != 40) {
+        fprintf(stderr, "background: '%s' is not a valid BMP\n", path);
+        fclose(f);
+        return -1;
+    }
+
+    uint32_t data_off = fh[10] | (fh[11]<<8) | (fh[12]<<16) | (fh[13]<<24);
+    int32_t bmp_w = (int32_t)(dh[4] | (dh[5]<<8) | (dh[6]<<16) | (dh[7]<<24));
+    int32_t bmp_h = (int32_t)(dh[8] | (dh[9]<<8) | (dh[10]<<16) | (dh[11]<<24));
+    uint16_t bpp_bmp = dh[14] | (dh[15]<<8);
+    uint32_t compression = dh[16] | (dh[17]<<8) | (dh[18]<<16) | (dh[19]<<24);
+
+    int top_down = 0;
+    int h_abs = bmp_h;
+    if (h_abs < 0) { top_down = 1; h_abs = -h_abs; }
+
+    if (bpp_bmp != 24 || compression != 0) {
+        fprintf(stderr, "background: only 24-bit uncompressed BMP is supported "
+                        "(got %u bpp, compression=%u)\n", bpp_bmp, compression);
+        fclose(f);
+        return -1;
+    }
+
+    int disp_w, disp_h;
+    get_display_size(fb, &disp_w, &disp_h);
+    if (bmp_w != disp_w || h_abs != disp_h) {
+        fprintf(stderr, "background: size mismatch — image is %dx%d, "
+                        "display is %dx%d (logical). Skipping.\n",
+                bmp_w, h_abs, disp_w, disp_h);
+        fclose(f);
+        return -1;
+    }
+
+    // Allocate the oriented buffer (matches backbuf layout). Calloc gives us
+    // a sensible zero fill for any stride padding the framebuffer has.
+    bg_buffer = (uint8_t *)calloc(1, fb->screensize);
+    if (!bg_buffer) {
+        fclose(f);
+        return -1;
+    }
+
+    int row_padded = (bmp_w * 3 + 3) & ~3;
+    uint8_t *row = (uint8_t *)malloc(row_padded);
+    if (!row) {
+        free(bg_buffer);
+        bg_buffer = NULL;
+        fclose(f);
+        return -1;
+    }
+
+    if (fseek(f, (long)data_off, SEEK_SET) != 0) {
+        free(row);
+        free(bg_buffer);
+        bg_buffer = NULL;
+        fclose(f);
+        return -1;
+    }
+
+    for (int ry = 0; ry < h_abs; ry++) {
+        if (fread(row, 1, row_padded, f) != (size_t)row_padded) {
+            fprintf(stderr, "background: short read at row %d\n", ry);
+            free(row);
+            free(bg_buffer);
+            bg_buffer = NULL;
+            fclose(f);
+            return -1;
+        }
+        // BMP is bottom-up unless height is negative
+        int logical_y = top_down ? ry : (h_abs - 1 - ry);
+        for (int x = 0; x < bmp_w; x++) {
+            uint8_t b = row[x*3 + 0];
+            uint8_t g = row[x*3 + 1];
+            uint8_t r = row[x*3 + 2];
+            set_pixel_to(fb, bg_buffer, x, logical_y, r, g, b);
+        }
+    }
+
+    free(row);
+    fclose(f);
+    fprintf(stderr, "background: loaded '%s' (%dx%d)\n", path, bmp_w, h_abs);
+    return 0;
 }
 
 // Copy back buffer to framebuffer in one shot (no flicker)
