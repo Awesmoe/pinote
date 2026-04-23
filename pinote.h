@@ -278,8 +278,16 @@ static inline void strip_utf8_accents(char *str, int size) {
     char *end = tmp + (size < (int)sizeof(tmp) ? size : (int)sizeof(tmp)) - 1;
     while (s < src_end && out < end) {
         if (s + 1 < src_end && s[0] == 0xC3 && s[1] >= 0x80 && s[1] <= 0xBF) {
-            // 2-byte UTF-8: U+00C0..U+00FF → mapped ASCII
-            *out++ = latin_accent_map[s[1] - 0x80];
+            // 2-byte UTF-8: U+00C0..U+00FF
+            // German umlauts and ß → preserve as Latin-1 bytes so draw_char
+            // can render them via dedicated glyphs (Ä Ö Ü ß ä ö ü).
+            unsigned char b1 = s[1];
+            if (b1 == 0x84 || b1 == 0x96 || b1 == 0x9C || b1 == 0x9F ||
+                b1 == 0xA4 || b1 == 0xB6 || b1 == 0xBC) {
+                *out++ = 0xC0 | (b1 & 0x3F);
+            } else {
+                *out++ = latin_accent_map[b1 - 0x80];
+            }
             s += 2;
         } else if (s + 1 < src_end && s[0] == 0xC2 && s[1] == 0xB7) {
             // U+00B7 middle dot · → " - "

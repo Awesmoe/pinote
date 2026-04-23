@@ -1018,18 +1018,29 @@ static void anidata_refresh_and_report(int id, char *report, size_t report_size)
 static void send_webhook(const char *url, const char *message) {
     if (!url[0] || !is_shell_safe(url)) return;
 
-    // Escape/strip characters unsafe for JSON-in-shell-single-quotes
+    // Escape/strip characters unsafe for JSON-in-shell-single-quotes.
+    // Latin-1 bytes (0x80-0xFF, e.g. Ä=0xC4 emitted by strip_utf8_accents for
+    // German umlauts) are re-encoded as proper 2-byte UTF-8 so the JSON body
+    // stays valid.
     char safe_msg[512];
     int j = 0;
-    for (int i = 0; message[i] && j < (int)sizeof(safe_msg) - 2; i++) {
-        if (message[i] == '"') {
+    for (int i = 0; message[i] && j < (int)sizeof(safe_msg) - 3; i++) {
+        unsigned char b = (unsigned char)message[i];
+        if (b == '"') {
             safe_msg[j++] = '\\';
             safe_msg[j++] = '"';
-        } else if (message[i] == '\'') {
+        } else if (b == '\'') {
             // Apostrophes break single-quoted shell strings — skip them
             continue;
+        } else if (b == 0xF8) {
+            // Our CP437 degree symbol maps to Unicode U+00B0, not U+00F8.
+            safe_msg[j++] = (char)0xC2;
+            safe_msg[j++] = (char)0xB0;
+        } else if (b >= 0x80) {
+            safe_msg[j++] = (char)(0xC0 | (b >> 6));
+            safe_msg[j++] = (char)(0x80 | (b & 0x3F));
         } else {
-            safe_msg[j++] = message[i];
+            safe_msg[j++] = (char)b;
         }
     }
     safe_msg[j] = '\0';
