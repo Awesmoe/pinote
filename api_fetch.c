@@ -398,6 +398,7 @@ typedef struct {
     char countdown[64];
     long airing_at;  // unix timestamp, 0 = TBA
     int finished;    // 1 if status is FINISHED
+    int total_episodes;  // ANIDATA "episodes" total (0 = unknown)
 } AnimeInfo;
 
 // Bounded strstr: search for needle in [haystack, end) only
@@ -448,6 +449,12 @@ static void parse_anidata_item(const char *p, const char *end, AnimeInfo *info) 
 
     extract_json_string(p, end, "title_romaji", info->title, sizeof(info->title));
 
+    // Total episode count (static metadata; "episodes":null leaves it 0).
+    // The "episodes": pattern won't match next_episode/episode_duration/
+    // mal_watched_episodes since none is preceded by a bare quote.
+    const char *eps = strstr_bounded(p, end, "\"episodes\":");
+    if (eps) sscanf(eps + strlen("\"episodes\":"), "%d", &info->total_episodes);
+
     const char *airing = strstr_bounded(p, end, "\"next_episode_at\":");
     if (airing) {
         sscanf(airing + strlen("\"next_episode_at\":"), "%ld", &info->airing_at);
@@ -456,7 +463,7 @@ static void parse_anidata_item(const char *p, const char *end, AnimeInfo *info) 
     if (info->airing_at > 0) {
         time_t now = time(NULL);
         long diff = info->airing_at - now;
-        if (diff <= 0) {
+        if (diff <= 60) {
             snprintf(info->countdown, sizeof(info->countdown), "Aired!");
         } else {
             int days = diff / 86400;
@@ -1120,14 +1127,20 @@ void refresh_status_cache(void) {
                     // contain a trailing " (W)" watched-count suffix we don't
                     // want in the webhook message.
                     char ep_token[32] = {0};
+                    int aired_ep = 0;
                     const char *ep_src = prev_cd ? strstr(prev_cd, "Ep") : NULL;
-                    if (ep_src) {
-                        int ep_num = 0;
-                        if (sscanf(ep_src, "Ep%d", &ep_num) == 1)
-                            snprintf(ep_token, sizeof(ep_token), "Ep%d", ep_num);
-                    }
+                    if (ep_src && sscanf(ep_src, "Ep%d", &aired_ep) == 1 && aired_ep > 0)
+                        snprintf(ep_token, sizeof(ep_token), "Ep%d", aired_ep);
                     const char *ep = ep_token[0] ? ep_token : NULL;
-                    int final = (anime[i].airing_at <= 0);
+                    // Finale = the episode that just aired is the show's last.
+                    // ANIDATA's "episodes" total is static metadata (known
+                    // before the daily sync), so it's reliable at fire time
+                    // even though next_episode/next_episode_at are still stale
+                    // — the airing is the very event that advances them. Fall
+                    // back to the old airing_at<=0 signal if total is unknown.
+                    int final = (anime[i].total_episodes > 0)
+                              ? (aired_ep >= anime[i].total_episodes)
+                              : (anime[i].airing_at <= 0);
                     if (ep && final)
                         snprintf(webhook_msgs[webhook_count], 256, "%s %s just aired! (final)", title, ep);
                     else if (ep)
