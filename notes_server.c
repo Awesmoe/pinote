@@ -930,9 +930,12 @@ int main(void) {
         fprintf(stderr, "display: logical size %dx%d\n", dw, dh);
     }
 
-    // Optional background image (24-bit BMP, logical display size)
-    if (config.background_image[0])
-        fb_load_background(&fb, config.background_image);
+    // Optional background images (24-bit BMP, logical display size).
+    // Slot BG_STATE_NONE is the legacy fallback; the rest are weather-driven.
+    for (int s = BG_STATE_NONE; s < BG_STATE_COUNT; s++) {
+        if (config.bg_paths[s][0])
+            fb_load_background(&fb, config.bg_paths[s], (BgState)s);
+    }
 
     // Initial render
     render_screen();

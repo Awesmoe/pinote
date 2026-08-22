@@ -5,9 +5,11 @@
 
 static int current_orientation = 0;
 
-// Optional background image, pre-transformed to the physical framebuffer layout.
-// When set, clear_screen() memcpys this into backbuf instead of doing a solid fill.
-static uint8_t *bg_buffer = NULL;
+// Optional background images, pre-transformed to the physical framebuffer layout.
+// Slot BG_STATE_NONE (index 0) holds the legacy background_image. The other
+// indices hold weather-driven backgrounds keyed by BgState. clear_screen()
+// picks status_cache.bg_state, falls back to slot 0, then to a solid fill.
+static uint8_t *bg_buffers[BG_STATE_COUNT] = {0};
 
 // Initialize framebuffer
 int fb_init(Framebuffer *fb, const char *device) {
@@ -132,8 +134,15 @@ void fill_rect(Framebuffer *fb, int x, int y, int w, int h, uint8_t r, uint8_t g
 
 // Clear screen (back buffer) - fills first scanline, then memcpy to remaining rows
 void clear_screen(Framebuffer *fb) {
-    if (bg_buffer) {
-        memcpy(fb->backbuf, bg_buffer, fb->screensize);
+    BgState s = status_cache.bg_state;
+    uint8_t *src = NULL;
+    if (s > BG_STATE_NONE && s < BG_STATE_COUNT && bg_buffers[s]) {
+        src = bg_buffers[s];
+    } else if (bg_buffers[BG_STATE_NONE]) {
+        src = bg_buffers[BG_STATE_NONE];
+    }
+    if (src) {
+        memcpy(fb->backbuf, src, fb->screensize);
         return;
     }
 
@@ -161,12 +170,14 @@ void clear_screen(Framebuffer *fb) {
     }
 }
 
-// Load a 24-bit uncompressed BMP as the background image.
+// Load a 24-bit uncompressed BMP into a background slot. Pass BG_STATE_NONE for
+// the legacy AppConfig.background_image, or one of the weather states.
 // The image is pre-transformed through the current orientation so clear_screen()
 // can blit it via a single memcpy. Returns 0 on success, -1 on failure.
 // Dimensions must match the logical display exactly (as reported by get_display_size).
-int fb_load_background(Framebuffer *fb, const char *path) {
+int fb_load_background(Framebuffer *fb, const char *path, BgState slot) {
     if (!path || !path[0]) return -1;
+    if (slot < 0 || slot >= BG_STATE_COUNT) return -1;
 
     FILE *f = fopen(path, "rb");
     if (!f) {
@@ -209,10 +220,14 @@ int fb_load_background(Framebuffer *fb, const char *path) {
         return -1;
     }
 
+    // Free any previous buffer in this slot (idempotent re-load).
+    free(bg_buffers[slot]);
+    bg_buffers[slot] = NULL;
+
     // Allocate the oriented buffer (matches backbuf layout). Calloc gives us
     // a sensible zero fill for any stride padding the framebuffer has.
-    bg_buffer = (uint8_t *)calloc(1, fb->screensize);
-    if (!bg_buffer) {
+    uint8_t *buf = (uint8_t *)calloc(1, fb->screensize);
+    if (!buf) {
         fclose(f);
         return -1;
     }
@@ -220,16 +235,14 @@ int fb_load_background(Framebuffer *fb, const char *path) {
     int row_padded = (bmp_w * 3 + 3) & ~3;
     uint8_t *row = (uint8_t *)malloc(row_padded);
     if (!row) {
-        free(bg_buffer);
-        bg_buffer = NULL;
+        free(buf);
         fclose(f);
         return -1;
     }
 
     if (fseek(f, (long)data_off, SEEK_SET) != 0) {
         free(row);
-        free(bg_buffer);
-        bg_buffer = NULL;
+        free(buf);
         fclose(f);
         return -1;
     }
@@ -238,8 +251,7 @@ int fb_load_background(Framebuffer *fb, const char *path) {
         if (fread(row, 1, row_padded, f) != (size_t)row_padded) {
             fprintf(stderr, "background: short read at row %d\n", ry);
             free(row);
-            free(bg_buffer);
-            bg_buffer = NULL;
+            free(buf);
             fclose(f);
             return -1;
         }
@@ -249,12 +261,13 @@ int fb_load_background(Framebuffer *fb, const char *path) {
             uint8_t b = row[x*3 + 0];
             uint8_t g = row[x*3 + 1];
             uint8_t r = row[x*3 + 2];
-            set_pixel_to(fb, bg_buffer, x, logical_y, r, g, b);
+            set_pixel_to(fb, buf, x, logical_y, r, g, b);
         }
     }
 
     free(row);
     fclose(f);
+    bg_buffers[slot] = buf;
     fprintf(stderr, "background: loaded '%s' (%dx%d)\n", path, bmp_w, h_abs);
     return 0;
 }

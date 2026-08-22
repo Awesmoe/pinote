@@ -21,6 +21,13 @@
   "rss_truncate": 30,
   "rss_per_line": 1,
   "sprite_enabled": 1,
+  "background_image": "/home/pi/pinote/bg_default.bmp",
+  "bg_clear": "/home/pi/pinote/bg_clear.bmp",
+  "bg_cloudy": "/home/pi/pinote/bg_cloudy.bmp",
+  "bg_fog": "/home/pi/pinote/bg_fog.bmp",
+  "bg_rain": "/home/pi/pinote/bg_rain.bmp",
+  "bg_snow": "/home/pi/pinote/bg_snow.bmp",
+  "bg_thunder": "/home/pi/pinote/bg_thunder.bmp",
   "modules": [
     {"type": "anime", "width": "full"},
     {"type": "rss", "width": "full"},

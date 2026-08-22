@@ -133,6 +133,21 @@ static int json_array_int(const char *arr, int idx, int *out) {
 
 static const char *day_names[] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
 
+// Collapse Open-Meteo's WMO weather codes into the 6 background slots.
+// Mirrors the bucketing in forecast.c's weather_condition() but merges
+// drizzle/rain/showers and snow/sleet to avoid needing extra art.
+static BgState wmo_to_bg_state(int code) {
+    if (code <= 1)                  return BG_STATE_CLEAR;
+    if (code <= 3)                  return BG_STATE_CLOUDY;
+    if (code == 45 || code == 48)   return BG_STATE_FOG;
+    if (code <= 67)                 return BG_STATE_RAIN;     // drizzle / rain
+    if (code <= 77)                 return BG_STATE_SNOW;     // snowfall / grains
+    if (code <= 82)                 return BG_STATE_RAIN;     // rain showers
+    if (code <= 86)                 return BG_STATE_SNOW;     // snow showers / sleet
+    if (code >= 95 && code <= 99)   return BG_STATE_THUNDER;
+    return BG_STATE_NONE;
+}
+
 static void fetch_weather(StatusCache *sc, ForecastCache *fc) {
     if (!config.has_location) return;
 
@@ -142,14 +157,14 @@ static void fetch_weather(StatusCache *sc, ForecastCache *fc) {
         snprintf(cmd, sizeof(cmd),
             "curl -s --max-time 15 --connect-timeout 5 'https://api.open-meteo.com/v1/forecast?"
             "latitude=%.4f&longitude=%.4f"
-            "&current=temperature_2m"
+            "&current=temperature_2m,weather_code"
             "&daily=weather_code,temperature_2m_max,temperature_2m_min,wind_speed_10m_max,uv_index_max,precipitation_sum"
             "&timezone=auto&forecast_days=%d' 2>/dev/null",
             config.latitude, config.longitude, config.forecast_days);
     } else {
         snprintf(cmd, sizeof(cmd),
             "curl -s --max-time 15 --connect-timeout 3 'https://api.open-meteo.com/v1/forecast?"
-            "latitude=%.4f&longitude=%.4f&current=temperature_2m' 2>/dev/null",
+            "latitude=%.4f&longitude=%.4f&current=temperature_2m,weather_code' 2>/dev/null",
             config.latitude, config.longitude);
     }
 
@@ -164,6 +179,14 @@ static void fetch_weather(StatusCache *sc, ForecastCache *fc) {
             float val = 0;
             if (sscanf(temp + strlen("\"temperature_2m\":"), "%f", &val) == 1)
                 snprintf(sc->weather_temp, sizeof(sc->weather_temp), "%.1fC", val);
+        }
+        const char *wc = strstr(current, "\"weather_code\":");
+        if (wc) {
+            int code = -1;
+            if (sscanf(wc + strlen("\"weather_code\":"), "%d", &code) == 1 && code >= 0) {
+                sc->current_weather_code = code;
+                sc->bg_state = wmo_to_bg_state(code);
+            }
         }
     }
 

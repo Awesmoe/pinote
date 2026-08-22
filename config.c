@@ -192,11 +192,24 @@ void load_config(const char *path, AppConfig *cfg) {
     json_get_int(buf, "orientation", &cfg->orientation);
     if (cfg->orientation < 1 || cfg->orientation > 4) cfg->orientation = 0;
 
-    // Background image (optional path to 24-bit BMP)
-    json_get_string(buf, "background_image", cfg->background_image, sizeof(cfg->background_image));
-
     // Transparent modules (skip module background fills so background_image shows through)
     json_get_int(buf, "modules_transparent", &cfg->modules_transparent);
+
+    // Background paths: legacy fallback + per-weather-state BMPs (all optional)
+    static const struct { const char *key; BgState state; } bg_keys[] = {
+        {"background_image", BG_STATE_NONE},
+        {"bg_clear",         BG_STATE_CLEAR},
+        {"bg_cloudy",        BG_STATE_CLOUDY},
+        {"bg_fog",           BG_STATE_FOG},
+        {"bg_rain",          BG_STATE_RAIN},
+        {"bg_snow",          BG_STATE_SNOW},
+        {"bg_thunder",       BG_STATE_THUNDER},
+    };
+    for (size_t i = 0; i < sizeof(bg_keys)/sizeof(bg_keys[0]); i++) {
+        json_get_string(buf, bg_keys[i].key,
+                        cfg->bg_paths[bg_keys[i].state],
+                        sizeof(cfg->bg_paths[0]));
+    }
 
     // Parse modules array (default: anime full, chart full, notes full)
     cfg->num_modules = 0;
