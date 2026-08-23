@@ -913,6 +913,10 @@ int main(void) {
     pthread_mutex_init(&store.lock, NULL);
     signal(SIGINT, handle_signal);
     signal(SIGTERM, handle_signal);
+    // A client vanishing mid-response (phone locks, walks out of WiFi) makes
+    // write() on its socket raise SIGPIPE, whose default action would kill the
+    // daemon. Ignore it so write() just fails with EPIPE instead.
+    signal(SIGPIPE, SIG_IGN);
 
     // Load config and saved notes
     load_config(CONFIG_PATH, &config);

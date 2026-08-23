@@ -98,6 +98,8 @@ void load_config(const char *path, AppConfig *cfg) {
     // Parse anime_per_line (default: 1)
     cfg->anime_per_line = 1;
     json_get_int(buf, "anime_per_line", &cfg->anime_per_line);
+    if (cfg->anime_per_line < 1) cfg->anime_per_line = 1;
+    if (cfg->anime_per_line > 2) cfg->anime_per_line = 2;
 
     // Parse note_scale (default: 0.6)
     cfg->note_scale = 0.6f;
@@ -262,8 +264,11 @@ void load_config(const char *path, AppConfig *cfg) {
                     sp += 6;
                     while (*sp && (*sp == ' ' || *sp == ':' || *sp == '\t')) sp++;
                     int sv = 0;
+                    // Capped at 4: render_screen() collects partners into
+                    // partners[MAX_MODULES][4], so a larger span would write
+                    // past that inner dimension.
                     if (sscanf(sp, "%d", &sv) == 1 && sv >= 2)
-                        m->span = sv;
+                        m->span = (sv > 4) ? 4 : sv;
                 }
 
                 if (m->type >= 0)

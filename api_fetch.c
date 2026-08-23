@@ -699,6 +699,32 @@ static void format_rss_date(const char *pubdate, char *out, int out_size) {
     snprintf(out, out_size, "%.6s", pubdate);
 }
 
+// Encode a Unicode code point as UTF-8. Returns bytes written, 0 if no room.
+static int utf8_encode(unsigned long cp, char *out, int space) {
+    if (cp < 0x80) {
+        if (space < 1) return 0;
+        out[0] = (char)cp;
+        return 1;
+    } else if (cp < 0x800) {
+        if (space < 2) return 0;
+        out[0] = (char)(0xC0 | (cp >> 6));
+        out[1] = (char)(0x80 | (cp & 0x3F));
+        return 2;
+    } else if (cp < 0x10000) {
+        if (space < 3) return 0;
+        out[0] = (char)(0xE0 | (cp >> 12));
+        out[1] = (char)(0x80 | ((cp >> 6) & 0x3F));
+        out[2] = (char)(0x80 | (cp & 0x3F));
+        return 3;
+    }
+    if (space < 4) return 0;
+    out[0] = (char)(0xF0 | (cp >> 18));
+    out[1] = (char)(0x80 | ((cp >> 12) & 0x3F));
+    out[2] = (char)(0x80 | ((cp >> 6) & 0x3F));
+    out[3] = (char)(0x80 | (cp & 0x3F));
+    return 4;
+}
+
 // Decode basic HTML entities in-place
 static void decode_html_entities(const char *src, char *dst, int dst_size) {
     int i = 0;
@@ -710,6 +736,39 @@ static void decode_html_entities(const char *src, char *dst, int dst_size) {
             else if (strncmp(src, "&quot;", 6) == 0) { dst[i++] = '"'; src += 6; }
             else if (strncmp(src, "&#39;", 5) == 0)  { dst[i++] = '\''; src += 5; }
             else if (strncmp(src, "&apos;", 6) == 0) { dst[i++] = '\''; src += 6; }
+            else if (src[1] == '#') {
+                // Generic numeric entity (&#8217; / &#x2019;). Feeds are full of
+                // these — &#8217; alone is the curly apostrophe half the web
+                // emits. Decode to UTF-8 and let strip_utf8_accents (called on
+                // the result right after) fold it down: it already maps smart
+                // quotes, dashes and the ellipsis to ASCII, and anything it
+                // doesn't know becomes '?' rather than mojibake.
+                const char *p = src + 2;
+                unsigned long cp = 0;
+                int digits = 0;
+                if (*p == 'x' || *p == 'X') {
+                    p++;
+                    for (; digits < 6; p++, digits++) {
+                        int d;
+                        if (*p >= '0' && *p <= '9')      d = *p - '0';
+                        else if (*p >= 'a' && *p <= 'f') d = *p - 'a' + 10;
+                        else if (*p >= 'A' && *p <= 'F') d = *p - 'A' + 10;
+                        else break;
+                        cp = cp * 16 + (unsigned long)d;
+                    }
+                } else {
+                    for (; digits < 7 && *p >= '0' && *p <= '9'; p++, digits++)
+                        cp = cp * 10 + (unsigned long)(*p - '0');
+                }
+                // Reject malformed, NUL, out-of-range and UTF-16 surrogates.
+                if (digits > 0 && *p == ';' && cp > 0 && cp <= 0x10FFFF &&
+                    !(cp >= 0xD800 && cp <= 0xDFFF)) {
+                    i += utf8_encode(cp, dst + i, dst_size - 1 - i);
+                    src = p + 1;
+                } else {
+                    dst[i++] = *src++;   // not a valid entity — copy '&' as-is
+                }
+            }
             else { dst[i++] = *src++; }
         } else {
             dst[i++] = *src++;
@@ -1054,14 +1113,23 @@ static void send_webhook(const char *url, const char *message) {
     // stays valid.
     char safe_msg[512];
     int j = 0;
-    for (int i = 0; message[i] && j < (int)sizeof(safe_msg) - 3; i++) {
+    // Bound is -7: the widest single-char expansion below is the 6-byte \u0027
+    // escape, plus one slot for the terminator.
+    for (int i = 0; message[i] && j < (int)sizeof(safe_msg) - 7; i++) {
         unsigned char b = (unsigned char)message[i];
         if (b == '"') {
             safe_msg[j++] = '\\';
             safe_msg[j++] = '"';
         } else if (b == '\'') {
-            // Apostrophes break single-quoted shell strings — skip them
-            continue;
+            // A literal apostrophe would close the single-quoted shell string we
+            // hand to curl, so emit the JSON escape instead — six ASCII bytes,
+            // none of them a quote. Discord renders it back as '.
+            safe_msg[j++] = '\\';
+            safe_msg[j++] = 'u';
+            safe_msg[j++] = '0';
+            safe_msg[j++] = '0';
+            safe_msg[j++] = '2';
+            safe_msg[j++] = '7';
         } else if (b == 0xF8) {
             // Our CP437 degree symbol maps to Unicode U+00B0, not U+00F8.
             safe_msg[j++] = (char)0xC2;
