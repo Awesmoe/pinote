@@ -5,7 +5,8 @@
  *
  * Reads a horizontal sprite sheet BMP (24bpp, uncompressed).
  * Outputs sprite_data.h with pixel data as RGB bytes.
- * Magenta (#FF00FF) pixels are stored as the transparent marker.
+ * Green-screen (#00FF00) pixels mark transparency; sprite.c treats any
+ * high-G / low-R / low-B pixel as transparent (fuzzy match).
  */
 #include <stdio.h>
 #include <stdlib.h>
