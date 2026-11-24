@@ -66,14 +66,19 @@ void *sprite_thread(void *arg) {
     while (!first_render_done && running)
         usleep(50000);
 
+    if (!running) return NULL;
+
+    pthread_mutex_lock(&store.lock);
     get_sprite_position(&sprite_x, &sprite_y);
+    pthread_mutex_unlock(&store.lock);
 
     while (running) {
-        // Draw current frame (combined restore + draw, no flicker)
+        // Hold store.lock so render_screen() can't mutate backbuf mid-restore
+        // or race with sprite_redraw_after_flip() on sprite_frame.
+        pthread_mutex_lock(&store.lock);
         draw_sprite_to_front(sprite_frame, sprite_x, sprite_y, 1);
-
-        // Advance frame
         sprite_frame = (sprite_frame + 1) % SPRITE_FRAMES;
+        pthread_mutex_unlock(&store.lock);
 
         // Sleep for frame duration
         long ms = SPRITE_FRAME_MS;

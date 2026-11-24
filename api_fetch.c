@@ -1111,6 +1111,9 @@ static void send_webhook(const char *url, const char *message) {
         if (b == '"') {
             safe_msg[j++] = '\\';
             safe_msg[j++] = '"';
+        } else if (b == '\\') {
+            safe_msg[j++] = '\\';
+            safe_msg[j++] = '\\';
         } else if (b == '\'') {
             // A literal apostrophe would close the single-quoted shell string we
             // hand to curl, so emit the JSON escape instead — six ASCII bytes,

@@ -95,11 +95,17 @@ static void format_signal_bars(int dbm, char *buf, int bufsize) {
 // ============================================================
 
 void save_notes(void) {
-    FILE *f = fopen(NOTES_FILE, "wb");
+    const char *tmp_path = NOTES_FILE ".tmp";
+    FILE *f = fopen(tmp_path, "wb");
     if (!f) return;
-    fwrite(&store.num_notes, sizeof(int), 1, f);
-    fwrite(store.notes, sizeof(Note), store.num_notes, f);
-    fclose(f);
+    int ok = (fwrite(&store.num_notes, sizeof(int), 1, f) == 1 &&
+              (store.num_notes == 0 ||
+               (int)fwrite(store.notes, sizeof(Note), store.num_notes, f) == store.num_notes) &&
+              fflush(f) == 0);
+    if (ok) fsync(fileno(f));
+    if (fclose(f) != 0) ok = 0;
+    if (!ok || rename(tmp_path, NOTES_FILE) != 0)
+        unlink(tmp_path);
 }
 
 void load_notes(void) {
@@ -639,15 +645,17 @@ static void *status_refresh_thread(void *arg) {
     // On boot, the service may start before the network is up.
     // Wait here so the first refresh doesn't fire into a dead network
     // and then lock out retries for the full refresh_interval.
-    while (running && !network_ready()) sleep(5);
+    while (running && !network_ready()) {
+        for (int i = 0; i < 5 && running; i++) sleep(1);
+    }
     while (running) {
         time_t now = time(NULL);
         if (now - status_cache.last_fetched >= config.refresh_interval) {
             refresh_status_cache();
+            if (!running) break;
         }
         render_screen();
-        sleep(30);
-        if (!running) break;
+        for (int i = 0; i < 30 && running; i++) sleep(1);
     }
     return NULL;
 }
