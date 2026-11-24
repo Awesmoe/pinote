@@ -822,23 +822,14 @@ static int rss_json_get_string(const char *json, const char *end, const char *ke
         if (*pos == '\\' && *(pos + 1)) {
             pos++;  // skip backslash
             if (*pos == 'u' && pos + 4 < end) {
-                // \uXXXX — parse hex codepoint, map common Unicode to ASCII
+                // \uXXXX — decode to UTF-8 and let strip_utf8_accents fold it
                 unsigned int cp = 0;
                 if (sscanf(pos + 1, "%4x", &cp) == 1) {
                     pos += 5;  // skip uXXXX
-                    // Latin accented chars (U+00C0-U+00FF) → ASCII base
-                    if (cp >= 0x00C0 && cp <= 0x00FF) {
-                        out[i++] = latin_accent_map[cp - 0x00C0];
-                    } else switch (cp) {
-                        case 0x201C: case 0x201D: out[i++] = '"'; break;   // curly double quotes
-                        case 0x2018: case 0x2019: out[i++] = '\''; break;  // curly single quotes
-                        case 0x2013: case 0x2014: out[i++] = '-'; break;   // en/em dash
-                        case 0x2026: // ellipsis
-                            if (i + 2 < out_size - 1) { out[i++]='.'; out[i++]='.'; out[i++]='.'; }
-                            break;
-                        case 0x00A0: out[i++] = ' '; break;  // non-breaking space
-                        default: out[i++] = '?'; break;  // unknown Unicode
-                    }
+                    if (cp > 0 && !(cp >= 0xD800 && cp <= 0xDFFF))
+                        i += utf8_encode(cp, out + i, out_size - 1 - i);
+                    else
+                        out[i++] = '?';
                     continue;
                 }
             }

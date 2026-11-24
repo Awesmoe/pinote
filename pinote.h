@@ -277,13 +277,26 @@ static inline void truncate_with_dots(char *str, int max_chars) {
 }
 
 // Strip UTF-8 accented Latin characters to ASCII equivalents (in-place)
-// Handles 2-byte UTF-8 sequences (U+00C0-U+00FF): é→e, ü→u, ñ→n, etc.
+// Handles Latin-1 Supplement (U+00C0-U+00FF), Latin Extended-A (U+0100-U+017F),
+// Romanian comma-below Ș/ș/Ț/ț (U+0218-U+021B), and combining diacritics.
 // ASCII base for U+00C0..U+00FF (Latin-1 Supplement accented chars)
 // À Á Â Ã Ä Å Æ Ç È É Ê Ë Ì Í Î Ï Ð Ñ Ò Ó Ô Õ Ö × Ø Ù Ú Û Ü Ý Þ ß
 // à á â ã ä å æ ç è é ê ë ì í î ï ð ñ ò ó ô õ ö ÷ ø ù ú û ü ý þ ÿ
 static const char latin_accent_map[64] =
     "AAAAAAACEEEEIIII" "DNOOOOOxOUUUUYTs"
     "aaaaaaaceeeeiiii" "dnooooo/ouuuuyty";
+
+// ASCII base for U+0100..U+017F (Latin Extended-A: Turkish, Polish, Czech,
+// Slovak, Hungarian, Romanian, Croatian, Baltic, etc.)
+static const char latin_ext_a_map[] =
+    "AaAaAaCcCcCcCcDd"  // U+0100..U+010F: Ā ā Ă ă Ą ą Ć ć Ĉ ĉ Ċ ċ Č č Ď ď
+    "DdEeEeEeEeEeGgGg"  // U+0110..U+011F: Đ đ Ē ē Ĕ ĕ Ė ė Ę ę Ě ě Ĝ ĝ Ğ ğ
+    "GgGgHhHhIiIiIiIi"  // U+0120..U+012F: Ġ ġ Ģ ģ Ĥ ĥ Ħ ħ Ĩ ĩ Ī ī Ĭ ĭ Į į
+    "IiIiJjKkkLlLlLlL"  // U+0130..U+013F: İ ı Ĳ ĳ Ĵ ĵ Ķ ķ ĸ Ĺ ĺ Ļ ļ Ľ ľ Ŀ
+    "lLlNnNnNnnNnOoOo"  // U+0140..U+014F: ŀ Ł ł Ń ń Ņ ņ Ň ň ŉ Ŋ ŋ Ō ō Ŏ ŏ
+    "OoOoRrRrRrSsSsSs"  // U+0150..U+015F: Ő ő Œ œ Ŕ ŕ Ŗ ŗ Ř ř Ś ś Ŝ ŝ Ş ş
+    "SsTtTtTtUuUuUuUu"  // U+0160..U+016F: Š š Ţ ţ Ť ť Ŧ ŧ Ũ ũ Ū ū Ŭ ŭ Ů ů
+    "UuUuWwYyYZzZzZzs"; // U+0170..U+017F: Ű ű Ų ų Ŵ ŵ Ŷ ŷ Ÿ Ź ź Ż ż Ž ž ſ
 
 static inline void strip_utf8_accents(char *str, int size) {
     size_t src_len = strnlen(str, size > 0 ? (size_t)size - 1 : 0);
@@ -304,6 +317,25 @@ static inline void strip_utf8_accents(char *str, int size) {
             } else {
                 *out++ = latin_accent_map[b1 - 0x80];
             }
+            s += 2;
+        } else if (s + 1 < src_end && (s[0] == 0xC4 || s[0] == 0xC5) &&
+                   s[1] >= 0x80 && s[1] <= 0xBF) {
+            // 2-byte UTF-8: U+0100..U+017F (Latin Extended-A)
+            *out++ = latin_ext_a_map[((s[0] - 0xC4) << 6) | (s[1] - 0x80)];
+            s += 2;
+        } else if (s + 1 < src_end && s[0] == 0xC8 && s[1] >= 0x98 && s[1] <= 0x9B) {
+            // 2-byte UTF-8: U+0218..U+021B (Romanian comma-below Ș ș Ț ț)
+            static const char ro_map[] = "SsTt";
+            *out++ = ro_map[s[1] - 0x98];
+            s += 2;
+        } else if (s + 1 < src_end &&
+                   ((s[0] == 0xCC && s[1] >= 0x80 && s[1] <= 0xBF) ||
+                    (s[0] == 0xCD && s[1] >= 0x80 && s[1] <= 0xAF))) {
+            // 2-byte UTF-8: U+0300..U+036F (combining diacritical marks) — drop
+            s += 2;
+        } else if (s + 1 < src_end && s[0] == 0xC2 && s[1] == 0xA0) {
+            // U+00A0 non-breaking space → space
+            *out++ = ' ';
             s += 2;
         } else if (s + 1 < src_end && s[0] == 0xC2 && s[1] == 0xB7) {
             // U+00B7 middle dot · → " - "
